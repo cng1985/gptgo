@@ -38,7 +38,12 @@ function downloadChat() {
   }
   const lines = [`# ${activeTitle()}`, '']
   for (const message of chat.messages) {
-    lines.push(message.role === 'user' ? '## 你' : '## ChatBI AI', '', message.content || '', '')
+    lines.push(message.role === 'user' ? '## 你' : '## ChatBI AI', '')
+    if (message.role === 'assistant' && message.thinking && message.thinking_mode !== 'off') {
+      const label = message.thinking_mode === 'deep' ? '深度思考' : '轻量思考'
+      lines.push(`### ${label}`, '', message.thinking, '')
+    }
+    lines.push(message.content || '', '')
   }
   const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
   const link = document.createElement('a')
@@ -115,8 +120,11 @@ onUnmounted(() => {
         <Icon name="chevron" :size="14" />
       </button>
       <div v-if="thinkOpen" class="menu think-menu">
-        <button v-for="item in thinkingModes" :key="item.id" type="button" :class="{ selected: item.id === chat.thinking }" @click="chooseThinking(item.id)">
-          <span>{{ item.label }}</span>
+        <button v-for="item in thinkingModes" :key="item.id" type="button" class="think-option" :class="{ selected: item.id === chat.thinking }" @click="chooseThinking(item.id)">
+          <span class="think-option-copy">
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.hint }}</small>
+          </span>
           <Icon v-if="item.id === chat.thinking" name="check" :size="16" />
         </button>
       </div>

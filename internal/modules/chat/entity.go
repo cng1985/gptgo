@@ -22,6 +22,7 @@ type Message struct {
 	Role           string
 	Content        string
 	Thinking       string
+	ThinkingMode   string
 	Chart          string
 	Tools          string
 	Status         string

@@ -40,20 +40,27 @@ func SeedDemo(db *gorm.DB) error {
 		{title: "用生活中的例子解释大语言模型是怎么工作的", at: localNoon.Add(-120 * time.Hour), ask: "用生活中的例子解释大语言模型是怎么工作的"},
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
-		for _, item := range items {
+		for i, item := range items {
 			at := item.at.UTC()
+			mode := "off"
+			switch i {
+			case 0:
+				mode = "deep"
+			case 1:
+				mode = "light"
+			}
 			conversation := Conversation{
 				AccountID:    1,
 				Title:        item.title,
 				Model:        "minimax-m3.1-flash",
-				ThinkingMode: "off",
+				ThinkingMode: mode,
 				CreatedAt:    at,
 				UpdatedAt:    at,
 			}
 			if err := tx.Create(&conversation).Error; err != nil {
 				return err
 			}
-			_, answer := aiplat.Compose(item.ask, "", "off")
+			thinking, answer := aiplat.Compose(item.ask, "", mode)
 			user := Message{
 				ConversationID: conversation.ID,
 				Role:           "user",
@@ -66,6 +73,8 @@ func SeedDemo(db *gorm.DB) error {
 				ConversationID: conversation.ID,
 				Role:           "assistant",
 				Content:        answer,
+				Thinking:       thinking,
+				ThinkingMode:   mode,
 				Status:         "done",
 				CreatedAt:      at.Add(time.Second),
 				UpdatedAt:      at.Add(time.Second),
@@ -73,7 +82,7 @@ func SeedDemo(db *gorm.DB) error {
 			if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "Status", "CreatedAt", "UpdatedAt").Create(&user).Error; err != nil {
 				return err
 			}
-			if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
+			if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "ThinkingMode", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
 				return err
 			}
 		}

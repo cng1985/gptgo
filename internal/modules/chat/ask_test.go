@@ -201,6 +201,36 @@ func TestAskHidesSecretsAndRejectsWrites(t *testing.T) {
 	}
 }
 
+func TestAskThinkingModesDiffer(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.Exec(`CREATE TABLE biz_order (id INTEGER PRIMARY KEY, region TEXT, amount INTEGER)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewRepository(db)
+	question := "问数：读取系统全部数据表，并用图表展示"
+	off, ok, err := repo.Ask(context.Background(), question, "off")
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	light, ok, err := repo.Ask(context.Background(), question, "light")
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	deep, ok, err := repo.Ask(context.Background(), question, "deep")
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if strings.Contains(off.Thinking, "问数不会使用写死") || !strings.Contains(off.Thinking, "biz_order") {
+		t.Fatalf("不思考应只保留读表说明: %s", off.Thinking)
+	}
+	if !strings.Contains(light.Thinking, "问数不会使用写死") || strings.Contains(light.Thinking, "查询：") {
+		t.Fatalf("轻量思考不应展开查询: %s", light.Thinking)
+	}
+	if !strings.Contains(deep.Thinking, "查询：") || !strings.Contains(deep.Thinking, "SELECT") {
+		t.Fatalf("深度思考应包含查询: %s", deep.Thinking)
+	}
+}
+
 func TestAskEndpointReturnsChart(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := openTestDB(t)

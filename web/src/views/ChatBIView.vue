@@ -3,7 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ChartPanel from '../components/ChartPanel.vue'
 import PageHead from '../components/PageHead.vue'
-import { chat, models, notify } from '../stores/chat'
+import ThinkingBlock from '../components/ThinkingBlock.vue'
+import { models, notify, thinkingModes } from '../stores/chat'
 import { askCatalog, askQuestion, chatbi, loadSchema, refreshBalance, refreshSources, searchUsage } from '../stores/chatbi'
 import { renderMarkdown } from '../utils/markdown'
 import { formatDateTime } from '../utils/time'
@@ -18,9 +19,11 @@ const errorText = ref('')
 const tables = ref([])
 const history = ref([])
 const catalogQuestion = ref('读取系统全部数据表，并用图表展示')
+const catalogThinking = ref(localStorage.getItem('chatbi-catalog-thinking') || 'off')
 const catalogAsking = ref(false)
 const catalogResult = ref(null)
 const catalogError = ref('')
+const catalogHint = computed(() => thinkingModes.find((item) => item.id === catalogThinking.value)?.hint || '')
 const catalogIdeas = [
   '读取系统全部数据表，并用图表展示',
   '对话按模型画饼图',
@@ -108,7 +111,7 @@ async function submitCatalog() {
   catalogAsking.value = true
   catalogError.value = ''
   try {
-    const response = await askCatalog(text, chat.thinking)
+    const response = await askCatalog(text, catalogThinking.value)
     catalogResult.value = response.data
   } catch (error) {
     catalogError.value = error.message || '问数失败'
@@ -162,6 +165,7 @@ watch(datasourceId, (value) => {
 })
 
 watch(model, (value) => localStorage.setItem('chatbi-model', value))
+watch(catalogThinking, (value) => localStorage.setItem('chatbi-catalog-thinking', value))
 
 onMounted(boot)
 </script>
@@ -177,6 +181,16 @@ onMounted(boot)
       <section class="panel-card catalog-ask">
         <h2>本库</h2>
         <p>问表、字段、数量或图表。密码哈希和登录令牌只显示为已隐藏。</p>
+        <div class="chips" aria-label="思考模式">
+          <button
+            v-for="item in thinkingModes"
+            :key="item.id"
+            type="button"
+            :class="{ selected: catalogThinking === item.id }"
+            @click="catalogThinking = item.id"
+          >{{ item.label }}</button>
+        </div>
+        <p class="form-note">{{ catalogHint }}</p>
         <form class="ask-box" @submit.prevent="submitCatalog">
           <textarea v-model="catalogQuestion" rows="3" maxlength="1000" placeholder="例如：读取系统全部数据表，并用图表展示" />
           <div class="ask-actions">
@@ -191,6 +205,7 @@ onMounted(boot)
         <template v-if="catalogResult">
           <p v-if="!catalogResult.matched" class="result-summary">{{ catalogResult.answer }}</p>
           <template v-else>
+            <ThinkingBlock variant="ask" :mode="catalogResult.thinking_mode" :text="catalogResult.thinking" />
             <ChartPanel v-if="catalogResult.chart" :chart="catalogResult.chart" />
             <div v-if="catalogResult.answer" class="markdown" v-html="catalogHtml" />
           </template>

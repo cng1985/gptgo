@@ -73,6 +73,7 @@ type MessageSimple struct {
 	Role           string             `json:"role"`
 	Content        string             `json:"content"`
 	Thinking       string             `json:"thinking"`
+	ThinkingMode   string             `json:"thinking_mode"`
 	Chart          json.RawMessage    `json:"chart,omitempty"`
 	Tools          json.RawMessage    `json:"tools,omitempty"`
 	Status         string             `json:"status"`
@@ -118,10 +119,11 @@ type AskRequest struct {
 }
 
 type AskResponse struct {
-	Matched  bool      `json:"matched"`
-	Thinking string    `json:"thinking,omitempty"`
-	Answer   string    `json:"answer,omitempty"`
-	Chart    *AskChart `json:"chart,omitempty"`
+	Matched      bool      `json:"matched"`
+	ThinkingMode string    `json:"thinking_mode,omitempty"`
+	Thinking     string    `json:"thinking,omitempty"`
+	Answer       string    `json:"answer,omitempty"`
+	Chart        *AskChart `json:"chart,omitempty"`
 }
 
 type ChatCompleteRequest struct {

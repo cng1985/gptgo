@@ -3,6 +3,7 @@ import { nextTick, onMounted, ref, watch } from 'vue'
 import ChartPanel from './ChartPanel.vue'
 import Icon from './Icon.vue'
 import SparkleMark from './SparkleMark.vue'
+import ThinkingBlock from './ThinkingBlock.vue'
 import { chat, notify, send } from '../stores/chat'
 import { renderMarkdown } from '../utils/markdown'
 
@@ -72,12 +73,12 @@ onMounted(() => scrollIfNeeded(true))
             <p v-if="tool.result">{{ tool.result }}</p>
           </details>
         </div>
-        <div v-if="message.role === 'assistant' && message.thinking" class="thinking">
-          <details :open="message.status === 'streaming'">
-            <summary>{{ message.status === 'streaming' ? '思考中' : '已思考' }}</summary>
-            <p>{{ message.thinking }}</p>
-          </details>
-        </div>
+        <ThinkingBlock
+          v-if="message.role === 'assistant'"
+          :mode="message.thinking_mode"
+          :text="message.thinking"
+          :streaming="message.status === 'streaming'"
+        />
         <div v-if="message.attachments?.length" class="msg-files">
           <span v-for="file in message.attachments" :key="file.id">{{ file.name }}</span>
         </div>

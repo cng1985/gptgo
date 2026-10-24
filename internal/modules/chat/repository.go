@@ -334,11 +334,12 @@ func prepareNew(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*Conversa
 		Role:           "assistant",
 		Content:        "",
 		Thinking:       "",
+		ThinkingMode:   request.ThinkingMode,
 		Status:         "streaming",
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
+	if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "ThinkingMode", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
 		return nil, 0, 0, err
 	}
 	return &conversation, user.ID, assistant.ID, nil
@@ -370,7 +371,7 @@ func prepareRegenerate(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*C
 		return nil, 0, 0, err
 	}
 	res := tx.Model(&Message{}).Where("id = ?", assistant.ID).Updates(map[string]any{
-		"content": "", "thinking": "", "chart": "", "tools": "", "status": "streaming", "updated_at": now,
+		"content": "", "thinking": "", "thinking_mode": request.ThinkingMode, "chart": "", "tools": "", "status": "streaming", "updated_at": now,
 	})
 	if res.Error != nil {
 		return nil, 0, 0, res.Error
@@ -416,11 +417,12 @@ func prepareEdit(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*Convers
 		Role:           "assistant",
 		Content:        "",
 		Thinking:       "",
+		ThinkingMode:   request.ThinkingMode,
 		Status:         "streaming",
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
+	if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "ThinkingMode", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
 		return nil, 0, 0, err
 	}
 	return &conversation, user.ID, assistant.ID, nil

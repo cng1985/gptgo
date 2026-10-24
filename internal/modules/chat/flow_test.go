@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -139,6 +140,60 @@ func TestAgentInstructionsReachModel(t *testing.T) {
 	ctx := domain.WithScope(context.Background(), domain.Scope{ActorID: 1, RequestID: "agent"})
 	if _, err := resource.Prepare(ctx, &ChatStreamRequest{Content: "写周报", Model: "builtin", ThinkingMode: "off", AgentID: 9}); err == nil {
 		t.Fatal("不存在的智能体应该被拒绝")
+	}
+}
+
+type thinkingModels struct {
+	mode string
+}
+
+func (m *thinkingModels) Stream(_ context.Context, req aiplat.Request) (<-chan aiplat.Delta, error) {
+	m.mode = req.ThinkingMode
+	ch := make(chan aiplat.Delta, 2)
+	ch <- aiplat.Delta{Thinking: "先看边界\n再给结论"}
+	ch <- aiplat.Delta{Content: "结论"}
+	close(ch)
+	return ch, nil
+}
+
+func TestThinkingModeSavedOnMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := openTestDB(t)
+	repo := NewRepository(db)
+	resource := NewResource(repo, nil, fakeModels{}, "builtin")
+	models := &thinkingModels{}
+	controller := NewController(resource, models, nil)
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		ctx := domain.WithScope(c.Request.Context(), domain.Scope{ActorID: 1, RequestID: "think"})
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
+	controller.Register(engine.Group("/api"))
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/chat/stream", strings.NewReader(`{"content":"看一下边界","model":"builtin","thinking_mode":"deep"}`))
+	req.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(recorder, req)
+	body := recorder.Body.String()
+	if recorder.Code != 200 || !strings.Contains(body, "event: thinking") || !strings.Contains(body, `"thinking_mode":"deep"`) {
+		t.Fatalf("思考模式没有进入流: %d %s", recorder.Code, body)
+	}
+	if models.mode != "deep" {
+		t.Fatalf("模型收到的思考模式 = %s", models.mode)
+	}
+
+	messages := postJSON(t, engine, "/api/message/search", `{"conversation_id":"1","page":1,"page_size":20}`)
+	rows, _ := messages["data"].([]any)
+	var assistant map[string]any
+	for _, row := range rows {
+		item := row.(map[string]any)
+		if item["role"] == "assistant" {
+			assistant = item
+		}
+	}
+	if assistant == nil || assistant["thinking_mode"] != "deep" || !strings.Contains(fmt.Sprint(assistant["thinking"]), "先看边界") {
+		t.Fatalf("消息没有按深度思考保存: %#v", messages)
 	}
 }
 
