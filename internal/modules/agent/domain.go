@@ -25,6 +25,20 @@ type AgentSearch struct {
 	PageSize int    `json:"page_size"`
 }
 
+type AgentDraftRequest struct {
+	Prompt string `json:"prompt"`
+	Model  string `json:"model"`
+}
+
+type AgentDraft struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Instructions string   `json:"instructions"`
+	Model        string   `json:"model"`
+	Opening      string   `json:"opening"`
+	Suggestions  []string `json:"suggestions"`
+}
+
 type AgentSimple struct {
 	ID          int64     `json:"id,string"`
 	Name        string    `json:"name"`

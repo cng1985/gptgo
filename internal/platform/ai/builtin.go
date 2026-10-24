@@ -89,6 +89,10 @@ func (b *Builtin) Optimize(_ context.Context, content, _ string) (string, error)
 	return optimizeText(content), nil
 }
 
+func (b *Builtin) Author(_ context.Context, prompt, model string) (string, error) {
+	return BuiltinDraft(prompt, model), nil
+}
+
 func planToolCalls(req Request) []ToolCall {
 	if len(req.Tools) == 0 {
 		return nil

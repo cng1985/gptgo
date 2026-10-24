@@ -8,12 +8,17 @@ import (
 	"gptgo/internal/platform/response"
 )
 
-type Resource struct {
-	repo *Repository
+type Author interface {
+	Author(ctx context.Context, prompt, model string) (string, error)
 }
 
-func NewResource(repo *Repository) *Resource {
-	return &Resource{repo: repo}
+type Resource struct {
+	repo   *Repository
+	author Author
+}
+
+func NewResource(repo *Repository, author Author) *Resource {
+	return &Resource{repo: repo, author: author}
 }
 
 func (r *Resource) Create(ctx context.Context, request *AgentRequest) (response.Response[AgentResponse], error) {
@@ -57,6 +62,42 @@ func (r *Resource) Search(ctx context.Context, search *AgentSearch) (response.Pa
 		return zero, apperr.Invalid("搜索关键词过长")
 	}
 	return r.repo.Search(ctx, search)
+}
+
+func (r *Resource) Draft(ctx context.Context, request *AgentDraftRequest) (response.Response[AgentDraft], error) {
+	var zero response.Response[AgentDraft]
+	if _, err := ownerID(ctx); err != nil {
+		return zero, err
+	}
+	if request == nil {
+		return zero, apperr.Invalid("参数格式错误")
+	}
+	prompt := strings.TrimSpace(request.Prompt)
+	if prompt == "" {
+		return zero, apperr.Invalid("先描述你想要的智能体")
+	}
+	if len([]rune(prompt)) > 1000 {
+		return zero, apperr.Invalid("描述不能超过 1000 个字")
+	}
+	model := strings.TrimSpace(request.Model)
+	if model == "" {
+		model = "builtin"
+	}
+	if _, ok := Models[model]; !ok {
+		return zero, apperr.Invalid("不支持的模型")
+	}
+	if r.author == nil {
+		return zero, apperr.Unavailable("暂时无法生成智能体")
+	}
+	raw, err := r.author.Author(ctx, prompt, model)
+	if err != nil {
+		return zero, apperr.Unavailable("暂时无法生成智能体")
+	}
+	draft, ok := decodeDraft(raw)
+	if !ok {
+		return zero, apperr.Unavailable("暂时无法生成智能体")
+	}
+	return response.OK(clampDraft(draft, prompt, model)), nil
 }
 
 func (r *Resource) Delete(ctx context.Context, request *AgentRequest) (response.Response[AgentResponse], error) {

@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"gptgo/internal/platform/config"
+	"gptgo/internal/platform/search"
 )
 
 type Router struct {
 	cfg     *config.Config
 	builtin *Builtin
 	remote  *Client
+	web     *search.Client
 	log     *slog.Logger
 }
 
@@ -21,8 +23,20 @@ func NewRouter(cfg *config.Config, log *slog.Logger) *Router {
 		cfg:     cfg,
 		builtin: &Builtin{Delay: 18 * time.Millisecond},
 		remote:  NewClient(cfg),
+		web:     search.New(cfg),
 		log:     log,
 	}
+}
+
+func (r *Router) Search(ctx context.Context, query string) (search.Result, error) {
+	if r.web == nil {
+		return search.Result{}, fmt.Errorf("联网检索不可用")
+	}
+	result, err := r.web.Search(ctx, query)
+	if err != nil && r.log != nil {
+		r.log.Warn("web search failed", "err", errString(err))
+	}
+	return result, err
 }
 
 func (r *Router) Info() (string, bool) {
@@ -55,6 +69,20 @@ func (r *Router) Optimize(ctx context.Context, content, model string) (string, e
 		r.log.Warn("prompt optimize fell back", "err", errString(err))
 	}
 	return r.builtin.Optimize(ctx, content, model)
+}
+
+func (r *Router) Author(ctx context.Context, prompt, model string) (string, error) {
+	if r.useRemote(model) {
+		raw, err := r.remote.Author(ctx, prompt, model)
+		if err == nil && validDraft(raw) {
+			return raw, nil
+		}
+		if err == nil {
+			err = fmt.Errorf("模型没有返回智能体配置")
+		}
+		r.log.Warn("agent draft fell back", "err", errString(err))
+	}
+	return r.builtin.Author(ctx, prompt, model)
 }
 
 func (r *Router) useRemote(model string) bool {

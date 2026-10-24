@@ -38,6 +38,26 @@ func TestProfileOverlayReplacesScalar(t *testing.T) {
 	}
 }
 
+func TestSearchProviderValidated(t *testing.T) {
+	cfg := validConfig()
+	if cfg.Search.Provider != "duckduckgo" {
+		t.Fatalf("默认检索来源: %s", cfg.Search.Provider)
+	}
+	cfg.Search.Provider = "nope"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("未知检索来源应该失败")
+	}
+	cfg.Search.Provider = "bing"
+	cfg.Search.APIKey = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("bing 缺少密钥应该失败")
+	}
+	cfg.Search.APIKey = "secret"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAuthEnabledAccepted(t *testing.T) {
 	cfg := validConfig()
 	cfg.Auth.Enabled = true

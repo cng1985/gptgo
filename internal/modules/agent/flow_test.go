@@ -23,7 +23,7 @@ func TestAgentFlow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := openTestDB(t)
 	repo := NewRepository(db)
-	resource := NewResource(repo)
+	resource := NewResource(repo, nil)
 	controller := NewController(resource)
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
@@ -89,12 +89,91 @@ func TestAgentFlow(t *testing.T) {
 
 func TestAgentRejectsEmptyInstructions(t *testing.T) {
 	db := openTestDB(t)
-	resource := NewResource(NewRepository(db))
+	resource := NewResource(NewRepository(db), nil)
 	ctx := domain.WithScope(context.Background(), domain.Scope{ActorID: 1})
 	if _, err := resource.Create(ctx, &AgentRequest{Name: "空设定", Model: "builtin"}); err == nil {
 		t.Fatal("没有设定的智能体应该被拒绝")
 	}
 }
+
+func TestAgentDraft(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := openTestDB(t)
+	author := fakeAuthor{raw: "```json\n{\"name\":\"周报助手\",\"description\":\"把一周工作收成三句话\",\"instructions\":\"只用三句话回答，先给结论。\",\"opening\":\"把这周要写的内容发给我。\",\"suggestions\":\"帮我写本周周报\\n先给结论\"}\n```"}
+	resource := NewResource(NewRepository(db), author)
+	controller := NewController(resource)
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		ctx := domain.WithScope(c.Request.Context(), domain.Scope{ActorID: 1, RequestID: "test"})
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
+	controller.Register(engine.Group("/api"))
+
+	drafted := postJSON(t, engine, "/api/agent/draft", `{"prompt":"做一个周报助手，只用三句话","model":"builtin"}`, "1")
+	if drafted["code"].(float64) != 200 {
+		t.Fatalf("draft: %#v", drafted)
+	}
+	data := drafted["data"].(map[string]any)
+	if data["name"] != "周报助手" || data["model"] != "builtin" {
+		t.Fatalf("草稿字段错误: %#v", data)
+	}
+	if !strings.Contains(data["instructions"].(string), "三句话") {
+		t.Fatalf("设定没有保留要求: %#v", data["instructions"])
+	}
+	suggestions := data["suggestions"].([]any)
+	if len(suggestions) != 2 || suggestions[0] != "帮我写本周周报" {
+		t.Fatalf("建议问题: %#v", suggestions)
+	}
+	page := postJSON(t, engine, "/api/agent/search", `{"page":1,"page_size":20}`, "1")
+	if page["total"].(float64) != 0 {
+		t.Fatalf("草稿不应写入数据库: %#v", page)
+	}
+
+	named := postJSON(t, engine, "/api/agent/draft", `{"prompt":"用 DeepSeek 做一个周报助手","model":"builtin"}`, "1")
+	if named["data"].(map[string]any)["model"] != "deepseek-chat" {
+		t.Fatalf("描述里的模型没有生效: %#v", named)
+	}
+	empty := postJSON(t, engine, "/api/agent/draft", `{"prompt":"  ","model":"builtin"}`, "1")
+	if empty["code"].(float64) != 400 {
+		t.Fatalf("空描述应拒绝: %#v", empty)
+	}
+	unknown := postJSON(t, engine, "/api/agent/draft", `{"prompt":"周报助手","model":"gpt-4"}`, "1")
+	if unknown["code"].(float64) != 400 {
+		t.Fatalf("未知模型应拒绝: %#v", unknown)
+	}
+
+	ctx := domain.WithScope(context.Background(), domain.Scope{ActorID: 1})
+	longPrompt := strings.Repeat("周", 1001)
+	if _, err := resource.Draft(ctx, &AgentDraftRequest{Prompt: longPrompt, Model: "builtin"}); err == nil {
+		t.Fatal("超长描述应该被拒绝")
+	}
+	if _, err := resource.Draft(context.Background(), &AgentDraftRequest{Prompt: "周报", Model: "builtin"}); err == nil {
+		t.Fatal("未登录不能生成草稿")
+	}
+	broken := NewResource(NewRepository(db), fakeAuthor{err: errBoom})
+	if _, err := broken.Draft(ctx, &AgentDraftRequest{Prompt: "周报助手", Model: "builtin"}); err == nil {
+		t.Fatal("生成失败应该返回错误")
+	}
+}
+
+type fakeAuthor struct {
+	raw string
+	err error
+}
+
+func (f fakeAuthor) Author(context.Context, string, string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.raw, nil
+}
+
+var errBoom = boomError{}
+
+type boomError struct{}
+
+func (boomError) Error() string { return "boom" }
 
 func postJSON(t *testing.T, engine *gin.Engine, path, body, actor string) map[string]any {
 	t.Helper()

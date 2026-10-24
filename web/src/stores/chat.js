@@ -31,6 +31,7 @@ export const chat = reactive({
   attachments: [],
   model: localStorage.getItem('chatbi-model') || 'minimax-m3.1-flash',
   thinking: localStorage.getItem('chatbi-thinking') || 'off',
+  webSearch: localStorage.getItem('chatbi-web-search') === '1',
   agentId: '',
   keyword: '',
   searching: false,
@@ -61,6 +62,15 @@ export function setModel(id) {
 export function setThinking(id) {
   chat.thinking = id
   localStorage.setItem('chatbi-thinking', id)
+}
+
+export function setWebSearch(on) {
+  chat.webSearch = !!on
+  localStorage.setItem('chatbi-web-search', chat.webSearch ? '1' : '0')
+}
+
+export function toggleWebSearch() {
+  setWebSearch(!chat.webSearch)
 }
 
 export function toggleTheme() {
@@ -179,6 +189,7 @@ export async function openConversation(id, { force = false } = {}) {
   chat.messages = payload.data || []
   if (one.data?.model) setModel(one.data.model)
   if (one.data?.thinking_mode) setThinking(one.data.thinking_mode)
+  if (one.data && Object.prototype.hasOwnProperty.call(one.data, 'web_search')) setWebSearch(one.data.web_search)
   const agentId = one.data?.agent_id
   chat.agentId = agentId && String(agentId) !== '0' ? String(agentId) : ''
 }
@@ -225,6 +236,8 @@ export async function send({ content, regenerateId, editId } = {}) {
     thinking: '',
     thinking_mode: chat.thinking,
     tools: [],
+    sources: [],
+    searchStatus: '',
     status: 'streaming',
     attachments: [],
   }
@@ -237,6 +250,8 @@ export async function send({ content, regenerateId, editId } = {}) {
       chat.messages[assistantIndex].thinking_mode = chat.thinking
       chat.messages[assistantIndex].chart = null
       chat.messages[assistantIndex].tools = []
+      chat.messages[assistantIndex].sources = []
+      chat.messages[assistantIndex].searchStatus = ''
       chat.messages[assistantIndex].status = 'streaming'
     }
   } else if (editId) {
@@ -259,6 +274,7 @@ export async function send({ content, regenerateId, editId } = {}) {
     content: regenerateId ? '' : text,
     model: chat.model,
     thinking_mode: chat.thinking,
+    web_search: chat.webSearch,
     attachments: regenerateId ? [] : files,
   }
   if (chat.activeId) body.conversation_id = String(chat.activeId)
@@ -299,6 +315,10 @@ export async function send({ content, regenerateId, editId } = {}) {
         if (event === 'thinking' && current) current.thinking += payload.delta || ''
         if (event === 'delta' && current) current.content += payload.delta || ''
         if (event === 'chart' && current) current.chart = payload
+        if (event === 'search' && current) {
+          current.searchStatus = payload.status || ''
+          if (Array.isArray(payload.sources)) current.sources = payload.sources
+        }
         if (event === 'tool' && current) {
           if (!Array.isArray(current.tools)) current.tools = []
           const index = current.tools.findIndex((item) => item.id === payload.id)

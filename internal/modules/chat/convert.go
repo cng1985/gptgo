@@ -46,6 +46,7 @@ func MessageEntityToSimple(entity *Message, attachments []Attachment) *MessageSi
 		ThinkingMode:   entity.ThinkingMode,
 		Chart:          chartPayload(entity.Chart),
 		Tools:          chartPayload(entity.Tools),
+		Sources:        chartPayload(entity.Sources),
 		Status:         entity.Status,
 		Attachments:    items,
 		CreatedAt:      entity.CreatedAt,

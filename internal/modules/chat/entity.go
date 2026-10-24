@@ -25,6 +25,7 @@ type Message struct {
 	ThinkingMode   string
 	Chart          string
 	Tools          string
+	Sources        string
 	Status         string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
