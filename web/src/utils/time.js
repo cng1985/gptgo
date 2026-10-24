@@ -11,6 +11,12 @@ export function groupLabel(value) {
   return '更早'
 }
 
+export function formatDateTime(value) {
+  const time = new Date(value)
+  if (Number.isNaN(time.getTime())) return ''
+  return time.toLocaleString('zh-CN', { hour12: false })
+}
+
 export function formatClock(value) {
   const time = new Date(value)
   if (Number.isNaN(time.getTime())) return ''

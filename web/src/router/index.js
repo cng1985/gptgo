@@ -3,6 +3,10 @@ import AppLayout from '../layouts/AppLayout.vue'
 import ChatView from '../views/ChatView.vue'
 import WorkspaceView from '../views/WorkspaceView.vue'
 import AuthView from '../views/AuthView.vue'
+import ChatBIView from '../views/ChatBIView.vue'
+import DatasourceView from '../views/DatasourceView.vue'
+import BillingView from '../views/BillingView.vue'
+import UsageView from '../views/UsageView.vue'
 import { ensureSession } from '../stores/chat'
 
 export const router = createRouter({
@@ -17,6 +21,10 @@ export const router = createRouter({
         { path: '', name: 'new-chat', component: ChatView },
         { path: 'c/:id', name: 'conversation', component: ChatView },
         { path: 'workspace', name: 'workspace', component: WorkspaceView },
+        { path: 'bi', name: 'bi', component: ChatBIView },
+        { path: 'datasources', name: 'datasources', component: DatasourceView },
+        { path: 'billing', name: 'billing', component: BillingView },
+        { path: 'usage', name: 'usage', component: UsageView },
       ],
     },
   ],

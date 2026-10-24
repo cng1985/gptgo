@@ -28,11 +28,19 @@ APP_AI_API_KEY=你的密钥 APP_AI_BASE_URL=https://api.openai.com/v1 APP_AI_UPS
 
 模型列表里的「内置助手」始终走本地回答器。
 
+## ChatBI
+
+每个登录账号可以配置自己的 MySQL、PostgreSQL 或 SQL Server 数据源。问数只生成并执行单条只读查询，结果里带表格和简单图表。密码加密后保存在本机库里，接口不会回传明文。
+
+首次打开账单时赠送 1000 额度，每次成功问数扣 2。账单页可以记一笔充值，用量页按日期和数据源汇总查询次数、估算令牌和扣费。失败的查询会留下记录，但不扣额度。
+
+没有模型密钥时，选择「内置助手」会按表结构在本地生成 SQL。配置了 `APP_AI_API_KEY` 后，其他模型会先生成 SQL，校验不通过再回退到本地规则。
+
 ## 项目约定
 
 - 后端是 Go、Gin、GORM 和 Fx。业务输入输出保持一个 Request/Search 对一个 Response/PageResponse。
 - 前端是 Vue 3、JavaScript 和 Vite。
-- 数据库默认且当前唯一完成验证的是 SQLite。MySQL、PostgreSQL、SQL Server 只保留配置位，连接时会明确失败。
+- 应用库默认且当前唯一完成验证的是 SQLite。配置里的 MySQL、PostgreSQL、SQL Server 只保留应用库配置位，连接时会明确失败。页面里的问数数据源是另一套连接，支持这三种数据库。
 - `auth.enabled` 为 true 时使用 HttpOnly 会话 cookie。注册、登录和退出走 `/api/account/register`、`/api/account/login`、`/api/account/logout`。设为 false 时不校验会话，页面里的 ada 仍是本机单用户。
 - `app.seed_demo` 是本项目增加的配置。它只在空库时写入示例对话，关闭后不影响已有数据。
 
