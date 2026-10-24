@@ -116,20 +116,9 @@ func (c *Config) Address() string {
 }
 
 func Load(opts Options, info RuntimeInfo) (*Config, error) {
-	baseDir := strings.TrimSpace(opts.BaseDir)
-	if baseDir == "" {
-		baseDir = strings.TrimSpace(os.Getenv("APP_BASE_DIR"))
-	}
-	if baseDir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("无法确定工作目录: %w", err)
-		}
-		baseDir = wd
-	}
-	absBase, err := filepath.Abs(baseDir)
+	absBase, err := resolveBaseDir(opts.BaseDir)
 	if err != nil {
-		return nil, fmt.Errorf("无法解析 base-dir: %w", err)
+		return nil, err
 	}
 
 	profile := strings.TrimSpace(opts.Profile)
@@ -203,6 +192,58 @@ func Load(opts Options, info RuntimeInfo) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func resolveBaseDir(explicit string) (string, error) {
+	baseDir := strings.TrimSpace(explicit)
+	if baseDir == "" {
+		baseDir = strings.TrimSpace(os.Getenv("APP_BASE_DIR"))
+	}
+	if baseDir != "" {
+		abs, err := filepath.Abs(baseDir)
+		if err != nil {
+			return "", fmt.Errorf("无法解析 base-dir: %w", err)
+		}
+		return abs, nil
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("无法确定工作目录: %w", err)
+	}
+	if root, ok := findAppRoot(wd); ok {
+		return root, nil
+	}
+	if exe, err := os.Executable(); err == nil {
+		if root, ok := findAppRoot(filepath.Dir(exe)); ok {
+			return root, nil
+		}
+	}
+	abs, err := filepath.Abs(wd)
+	if err != nil {
+		return "", fmt.Errorf("无法解析 base-dir: %w", err)
+	}
+	return abs, nil
+}
+
+// findAppRoot 从 start 向上查找含 configs/application.yaml 的目录。
+// GoLand 直接运行 cmd/server 时，工作目录往往是源码目录而不是模块根。
+func findAppRoot(start string) (string, bool) {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", false
+	}
+	for {
+		configFile := filepath.Join(dir, "configs", "application.yaml")
+		info, err := os.Stat(configFile)
+		if err == nil && !info.IsDir() {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
 }
 
 func (c *Config) Validate() error {

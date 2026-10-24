@@ -60,6 +60,58 @@ func (c *Client) Stream(ctx context.Context, req Request) (<-chan Delta, error) 
 	return ch, nil
 }
 
+func (c *Client) Complete(ctx context.Context, system, user, model string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 18*time.Second)
+	defer cancel()
+	name := model
+	if c.upstream != "" {
+		name = c.upstream
+	}
+	payload := map[string]any{
+		"model": name,
+		"messages": []map[string]string{
+			{"role": "system", "content": system},
+			{"role": "user", "content": user},
+		},
+		"stream": false,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	c.decorate(httpReq)
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("模型接口返回 %d", resp.StatusCode)
+	}
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return "", err
+	}
+	if len(parsed.Choices) == 0 || strings.TrimSpace(parsed.Choices[0].Message.Content) == "" {
+		return "", fmt.Errorf("模型没有返回内容")
+	}
+	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+}
+
 func (c *Client) Optimize(ctx context.Context, content, model string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -53,6 +54,22 @@ func run() error {
 		return err
 	}
 	application := New(cfg)
-	application.Run()
-	return application.Err()
+	// fx.App.Run 在启动失败时直接 os.Exit。Fx 日志是关掉的，所以控制台只剩退出码 1。
+	startCtx, cancel := context.WithTimeout(context.Background(), application.StartTimeout())
+	err = application.Start(startCtx)
+	cancel()
+	if err != nil {
+		return err
+	}
+	sig := <-application.Wait()
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), application.StopTimeout())
+	err = application.Stop(stopCtx)
+	stopCancel()
+	if err != nil {
+		return err
+	}
+	if sig.ExitCode != 0 {
+		return fmt.Errorf("进程退出码 %d", sig.ExitCode)
+	}
+	return nil
 }

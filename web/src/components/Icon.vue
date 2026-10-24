@@ -82,5 +82,21 @@ defineProps({
     <template v-else-if="name === 'menu'">
       <path d="M4 7h16M4 12h16M4 17h16" />
     </template>
+    <template v-else-if="name === 'database'">
+      <ellipse cx="12" cy="6.5" rx="7" ry="3" />
+      <path d="M5 6.5v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+      <path d="M5 12.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5" />
+    </template>
+    <template v-else-if="name === 'chart'">
+      <path d="M4 19h16" />
+      <path d="M7 16V10" />
+      <path d="M12 16V5" />
+      <path d="M17 16v-4" />
+    </template>
+    <template v-else-if="name === 'coin'">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 7.5v9" />
+      <path d="M9.6 9.2c.5-.7 1.4-1.1 2.4-1.1 1.5 0 2.4.8 2.4 1.9s-.9 1.7-2.4 1.9-2.4.8-2.4 1.9.9 1.9 2.4 1.9c1 0 1.9-.4 2.4-1.1" />
+    </template>
   </svg>
 </template>
