@@ -6,6 +6,13 @@ import SparkleMark from './SparkleMark.vue'
 import { chat, logout, refreshConversations, removeConversation, renameConversation, resetDraft, saveName, stop } from '../stores/chat'
 import { groupLabel } from '../utils/time'
 
+const productLinks = [
+  { name: 'bi', path: '/bi', icon: 'chart', label: '问数' },
+  { name: 'datasources', path: '/datasources', icon: 'database', label: '数据源' },
+  { name: 'usage', path: '/usage', icon: 'spark', label: '用量' },
+  { name: 'billing', path: '/billing', icon: 'coin', label: '账单' },
+]
+
 const route = useRoute()
 const router = useRouter()
 const searchOpen = ref(false)
@@ -46,6 +53,12 @@ const groups = computed(() => {
   }
   return order.filter((label) => buckets[label].length).map((label) => ({ label, items: buckets[label] }))
 })
+
+function openPath(path) {
+  menuId.value = ''
+  chat.sidebarOpen = false
+  router.push(path)
+}
 
 function newChat() {
   stop()
@@ -139,6 +152,18 @@ async function signOut() {
       <span class="new-chat-label"><Icon name="pencil" :size="16" /> 新建对话</span>
       <span class="kbd">Ctrl K</span>
     </button>
+    <nav class="side-nav">
+      <button
+        v-for="item in productLinks"
+        :key="item.name"
+        type="button"
+        :class="{ active: route.name === item.name }"
+        @click="openPath(item.path)"
+      >
+        <Icon :name="item.icon" :size="15" />
+        <span>{{ item.label }}</span>
+      </button>
+    </nav>
     <button v-if="!searchOpen" class="search-entry" type="button" @click="openSearch">
       <Icon name="search" :size="16" />
       <span>搜索对话</span>

@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -36,6 +37,13 @@ func (r *Router) Stream(ctx context.Context, req Request) (<-chan Delta, error) 
 		return r.remote.Stream(ctx, req)
 	}
 	return r.builtin.Stream(ctx, req)
+}
+
+func (r *Router) Complete(ctx context.Context, system, user, model string) (string, error) {
+	if !r.useRemote(model) {
+		return "", fmt.Errorf("使用内置问数")
+	}
+	return r.remote.Complete(ctx, system, user, model)
 }
 
 func (r *Router) Optimize(ctx context.Context, content, model string) (string, error) {
