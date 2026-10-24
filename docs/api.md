@@ -37,9 +37,22 @@
 | `POST /api/billing/topup` | 记一笔充值并增加额度 |
 | `POST /api/usage/summary` | 按天和数据源汇总用量 |
 | `POST /api/usage/search` | 分页问数记录 |
+| `POST /api/tool/search` | 当前账号的内置工具及开关 |
+| `POST /api/tool/update` | 开启或关闭一个内置工具 |
+| `POST /api/httptool/create` | 创建 HTTP 工具 |
+| `POST /api/httptool/update` | 修改 HTTP 工具，请求头留空表示不改 |
+| `POST /api/httptool/one` | HTTP 工具详情，不返回请求头 |
+| `POST /api/httptool/search` | 分页搜索当前账号的 HTTP 工具 |
+| `POST /api/httptool/delete` | 删除 HTTP 工具 |
+| `POST /api/mcp/create` | 创建 MCP 服务，传输为 `stdio` 或 `http` |
+| `POST /api/mcp/update` | 修改 MCP 服务，环境变量和请求头留空表示不改 |
+| `POST /api/mcp/one` | MCP 服务详情，不返回密钥 |
+| `POST /api/mcp/search` | 分页搜索当前账号的 MCP 服务 |
+| `POST /api/mcp/delete` | 删除 MCP 服务 |
+| `POST /api/mcp/tools` | 连接 MCP 并返回它提供的工具 |
 | `GET /health/live` | 存活 |
 | `GET /health/ready` | 数据库可访问 |
 
-流式事件为 `meta`、`thinking`、`delta`、`done`、`error`。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。
+流式事件为 `meta`、`thinking`、`tool`、`delta`、`done`、`error`。`tool` 事件带上工具名、参数、状态和结果。助手消息的 `tools` 字段保存这一轮调用。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。
 
 `POST /api/ask` 读取当前 SQLite 里的每一张业务表，而不是一份写死的表白名单。命中问数时，`data.chart` 带上图表类型、列、行，以及本次读到的全部表。图表类型可以是 `bar`、`line`、`pie`、`metric` 或 `table`。`data.answer` 是结论文字。密码哈希和登录令牌只显示为「已隐藏」。问数只执行单条只读 `SELECT`。没有识别成问数时 `matched` 为 false，不会查询。

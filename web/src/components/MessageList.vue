@@ -56,7 +56,7 @@ function commitEdit(message) {
   send({ content: text, editId: message.id })
 }
 
-watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}`).join('\n'), () => scrollIfNeeded())
+watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}|${(item.tools || []).map((tool) => `${tool.id}:${tool.status}:${tool.result || ''}`).join(',')}`).join('\n'), () => scrollIfNeeded())
 onMounted(() => scrollIfNeeded(true))
 </script>
 
@@ -65,6 +65,13 @@ onMounted(() => scrollIfNeeded(true))
     <article v-for="message in chat.messages" :key="message.id" class="message" :class="message.role">
       <div v-if="message.role === 'assistant'" class="assistant-mark"><SparkleMark :size="16" /></div>
       <div class="bubble-wrap">
+        <div v-if="message.role === 'assistant' && message.tools?.length" class="tool-trace">
+          <details v-for="tool in message.tools" :key="tool.id || tool.name" :open="tool.status === 'running' || message.status === 'streaming'">
+            <summary>{{ tool.status === 'running' ? '正在调用' : (tool.ok === false ? '调用失败' : '已调用') }} {{ tool.name }}</summary>
+            <p v-if="tool.arguments" class="tool-args">{{ tool.arguments }}</p>
+            <p v-if="tool.result">{{ tool.result }}</p>
+          </details>
+        </div>
         <div v-if="message.role === 'assistant' && message.thinking" class="thinking">
           <details :open="message.status === 'streaming'">
             <summary>{{ message.status === 'streaming' ? '思考中' : '已思考' }}</summary>

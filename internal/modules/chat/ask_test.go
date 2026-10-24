@@ -209,7 +209,7 @@ func TestAskEndpointReturnsChart(t *testing.T) {
 	}
 	repo := NewRepository(db)
 	resource := NewResource(repo, nil, fakeModels{}, "builtin")
-	controller := NewController(resource, fakeModels{})
+	controller := NewController(resource, fakeModels{}, nil)
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
 		ctx := domain.WithScope(c.Request.Context(), domain.Scope{ActorID: 1, RequestID: "ask"})

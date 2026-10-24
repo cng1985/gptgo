@@ -40,7 +40,7 @@ func TestConversationFlow(t *testing.T) {
 	db := openTestDB(t)
 	repo := NewRepository(db)
 	resource := NewResource(repo, nil, fakeModels{}, "builtin")
-	controller := NewController(resource, fakeModels{})
+	controller := NewController(resource, fakeModels{}, nil)
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
 		ctx := domain.WithScope(c.Request.Context(), domain.Scope{ActorID: 1, RequestID: "test"})
@@ -116,7 +116,7 @@ func TestAgentInstructionsReachModel(t *testing.T) {
 	repo := NewRepository(db)
 	resource := NewResource(repo, stubAgents{}, fakeModels{}, "builtin")
 	models := &captureModels{}
-	controller := NewController(resource, models)
+	controller := NewController(resource, models, nil)
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
 		ctx := domain.WithScope(c.Request.Context(), domain.Scope{ActorID: 1, RequestID: "agent"})
