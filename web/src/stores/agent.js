@@ -12,6 +12,14 @@ export async function refreshAgents() {
   return agents.items
 }
 
+export async function draftAgent(body) {
+  const result = await post('/api/agent/draft', {
+    prompt: body.prompt,
+    model: body.model,
+  })
+  return result.data
+}
+
 export async function loadAgent(id) {
   const result = await post('/api/agent/one', { id: String(id) })
   return result.data

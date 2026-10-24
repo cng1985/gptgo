@@ -382,21 +382,10 @@ button:disabled { cursor: default; }
   font-size: 14px;
   color: var(--text);
 }
-.agent-layout, .tool-layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
-.tool-block { margin-bottom: 16px; }
-.tool-layout { margin-top: 16px; }
-.toggle-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.toggle-row strong, .toggle-row span, .remote-tools strong, .remote-tools span { display: block; }
-.toggle-row span, .remote-tools span { color: var(--text-3); font-size: 12px; margin-top: 4px; }
-.primary.tiny { height: 34px; padding: 0 12px; }
-.check-row { display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; color: var(--text-2); font-size: 13px; }
-.remote-tools { list-style: none; margin: 12px 0 0; padding: 0; }
-.remote-tools li { padding: 8px 0; border-top: 1px solid var(--line); }
-.tool-trace { display: grid; gap: 6px; margin-bottom: 8px; }
-.tool-trace details { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--bubble); }
-.tool-trace summary { cursor: pointer; font-size: 13px; }
-.tool-trace p, .tool-args { margin: 8px 0 0; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
-.tool-args { color: var(--text-3); font-family: var(--mono); font-size: 12px; }
+.draft-box { margin-bottom: 14px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.draft-box .field textarea { min-height: 72px; }
+.opt-chip:disabled { opacity: 0.55; }
+.agent-layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
 .agent-layout .field input + input { margin-top: 8px; }
 .history-row.selected { background: var(--hover); }
 

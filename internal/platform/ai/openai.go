@@ -112,6 +112,18 @@ func (c *Client) Complete(ctx context.Context, system, user, model string) (stri
 	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
 }
 
+func (c *Client) Author(ctx context.Context, prompt, model string) (string, error) {
+	system := `你负责把用户的一句话需求写成智能体配置。只返回一个 JSON 对象，不要 Markdown，不要解释。
+字段要求：
+- name：智能体名称，1 到 40 个字
+- description：一句话简介，不超过 200 个字
+- instructions：可执行的中文设定，写清角色、回答方式和边界，不超过 4000 个字
+- opening：用户打开对话时看到的开场白，不超过 500 个字
+- suggestions：3 到 4 条用户可能会问的问题，字符串数组，每条不超过 80 个字
+不要输出 model。`
+	return c.Complete(ctx, system, prompt, model)
+}
+
 func (c *Client) Optimize(ctx context.Context, content, model string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
