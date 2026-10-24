@@ -2,11 +2,17 @@
 import { onMounted, reactive, ref } from 'vue'
 import PageHead from '../components/PageHead.vue'
 import { notify } from '../stores/chat'
-import { loadHTTP, loadMCP, refreshToolkit, removeHTTP, removeMCP, saveHTTP, saveMCP, setBuiltin, testMCP, toolkit } from '../stores/toolkit'
+import { installSkillHub, loadHTTP, loadMCP, loadSkill, refreshToolkit, removeHTTP, removeMCP, removeSkill, saveHTTP, saveMCP, searchSkillHub, setBuiltin, setSkillEnabled, testMCP, toolkit, uploadSkill } from '../stores/toolkit'
 
 const savingHTTP = ref(false)
 const savingMCP = ref(false)
 const testing = ref(false)
+const uploading = ref(false)
+const searchingHub = ref(false)
+const installing = ref('')
+const fileRef = ref(null)
+const hubKeyword = ref('')
+const skillDetail = ref(null)
 const httpForm = reactive(blankHTTP())
 const mcpForm = reactive(blankMCP())
 
@@ -164,6 +170,74 @@ async function deleteMCP() {
   }
 }
 
+async function openSkill(item) {
+  try {
+    skillDetail.value = await loadSkill(item.id)
+  } catch (error) {
+    notify(error.message || '读取失败')
+  }
+}
+
+async function toggleSkill() {
+  if (!skillDetail.value) return
+  try {
+    skillDetail.value = await setSkillEnabled(skillDetail.value.id, !skillDetail.value.enabled)
+  } catch (error) {
+    notify(error.message || '更新失败')
+  }
+}
+
+async function deleteSkill() {
+  if (!skillDetail.value) return
+  try {
+    await removeSkill(skillDetail.value.id)
+    skillDetail.value = null
+    notify('已删除技能')
+  } catch (error) {
+    notify(error.message || '删除失败')
+  }
+}
+
+async function onUpload(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  uploading.value = true
+  try {
+    skillDetail.value = await uploadSkill(file)
+    notify('已安装技能')
+  } catch (error) {
+    notify(error.message || '上传失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function searchHub() {
+  searchingHub.value = true
+  try {
+    const items = await searchSkillHub(hubKeyword.value.trim())
+    if (!items.length) notify('没有找到技能')
+  } catch (error) {
+    notify(error.message || '搜索失败')
+  } finally {
+    searchingHub.value = false
+  }
+}
+
+async function installHub(item) {
+  const key = `${item.namespace}/${item.slug}`
+  installing.value = key
+  try {
+    skillDetail.value = await installSkillHub(item)
+    notify('已从 SkillHub 安装')
+  } catch (error) {
+    notify(error.message || '安装失败')
+  } finally {
+    installing.value = ''
+  }
+}
+
 async function probeMCP() {
   if (!mcpForm.id) return
   testing.value = true
@@ -183,12 +257,64 @@ onMounted(reload)
 
 <template>
   <div class="panel-page">
-    <PageHead title="工具与 MCP" />
+    <PageHead title="技能、工具与 MCP" />
     <div class="panel-body">
       <header class="panel-intro">
-        <h1>让回答能调用工具</h1>
-        <p>内置工具默认开启。HTTP 工具按你写的地址发请求。MCP 可以用本机命令或 HTTP 服务，把对方的工具交给当前对话。密钥只加密存在本机，页面不再显示原文。</p>
+        <h1>让回答能使用技能和工具</h1>
+        <p>技能是带 SKILL.md 的说明包，可以上传，也可以从 SkillHub 安装。启用后，对话会在需要时读取它，并继续调用已开启的内置工具、HTTP 工具和 MCP。密钥只加密存在本机，技能包里的脚本不会被执行。</p>
       </header>
+
+      <section class="panel-card tool-block">
+        <div class="section-head">
+          <h2>技能</h2>
+          <button class="ghost" type="button" :disabled="uploading" @click="fileRef?.click()">{{ uploading ? '上传中' : '上传技能包' }}</button>
+          <input ref="fileRef" class="file-input" type="file" accept=".zip,.md,text/markdown,application/zip" @change="onUpload" />
+        </div>
+        <div class="tool-layout">
+          <div>
+            <button
+              v-for="item in toolkit.skills"
+              :key="item.id"
+              class="history-row"
+              :class="{ selected: skillDetail && String(skillDetail.id) === String(item.id) }"
+              type="button"
+              @click="openSkill(item)"
+            >
+              <strong>{{ item.display_name || item.name }}</strong>
+              <span>{{ item.source === 'skillhub' ? 'SkillHub' : '上传' }} · {{ item.name }}</span>
+            </button>
+            <p v-if="!toolkit.skills.length" class="muted">还没有技能。上传 zip 或 SKILL.md，或在下面搜索 SkillHub。</p>
+          </div>
+          <div v-if="skillDetail" class="source-form">
+            <h2>{{ skillDetail.display_name || skillDetail.name }}</h2>
+            <p class="muted">{{ skillDetail.description }}</p>
+            <p class="muted">{{ skillDetail.version || '未标版本' }} · {{ skillDetail.enabled ? '已启用' : '已停用' }}</p>
+            <pre v-if="skillDetail.body" class="skill-body">{{ skillDetail.body }}</pre>
+            <p v-if="skillDetail.files?.length" class="muted">文件：{{ skillDetail.files.join('、') }}</p>
+            <div class="form-actions">
+              <button class="primary tiny" type="button" @click="toggleSkill">{{ skillDetail.enabled ? '停用' : '启用' }}</button>
+              <button class="ghost danger-text" type="button" @click="deleteSkill">删除</button>
+            </div>
+          </div>
+          <p v-else class="muted">选中一个技能可以查看说明。</p>
+        </div>
+        <form class="source-form hub-form" @submit.prevent="searchHub">
+          <h2>从 SkillHub 安装</h2>
+          <label class="field">关键词<input v-model="hubKeyword" maxlength="100" placeholder="例如 pdf、周报" /></label>
+          <div class="form-actions">
+            <button class="primary tiny" type="submit" :disabled="searchingHub">{{ searchingHub ? '搜索中' : '搜索' }}</button>
+          </div>
+          <div v-for="item in toolkit.hub" :key="`${item.namespace}/${item.slug}`" class="skill-hit">
+            <div>
+              <strong>{{ item.name || item.slug }}</strong>
+              <span>{{ item.namespace }}/{{ item.slug }} {{ item.version }} {{ item.description }}</span>
+            </div>
+            <button class="ghost" type="button" :disabled="installing === `${item.namespace}/${item.slug}`" @click="installHub(item)">
+              {{ installing === `${item.namespace}/${item.slug}` ? '安装中' : '安装' }}
+            </button>
+          </div>
+        </form>
+      </section>
 
       <section class="panel-card tool-block">
         <h2>内置工具</h2>

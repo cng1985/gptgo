@@ -58,6 +58,21 @@ func TestSearchProviderValidated(t *testing.T) {
 	}
 }
 
+func TestSkillHubURLValidated(t *testing.T) {
+	cfg := validConfig()
+	if cfg.SkillHub.BaseURL == "" {
+		t.Fatal("默认 SkillHub 地址丢失")
+	}
+	cfg.SkillHub.BaseURL = "ftp://skill.example"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("非法 SkillHub 地址应该失败")
+	}
+	cfg.SkillHub.BaseURL = ""
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAuthEnabledAccepted(t *testing.T) {
 	cfg := validConfig()
 	cfg.Auth.Enabled = true

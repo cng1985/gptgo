@@ -1,3 +1,15 @@
+export async function upload(url, file) {
+  const body = new FormData()
+  body.append('file', file)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+    body,
+  })
+  return readJSON(response)
+}
+
 export async function post(url, body) {
   const response = await fetch(url, {
     method: 'POST',
@@ -5,6 +17,10 @@ export async function post(url, body) {
     credentials: 'same-origin',
     body: JSON.stringify(body ?? {}),
   })
+  return readJSON(response)
+}
+
+async function readJSON(response) {
   let data = {}
   try {
     data = await response.json()
