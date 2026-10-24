@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onMounted, ref, watch } from 'vue'
+import ChartPanel from './ChartPanel.vue'
 import Icon from './Icon.vue'
 import SparkleMark from './SparkleMark.vue'
 import { chat, notify, send } from '../stores/chat'
@@ -55,7 +56,7 @@ function commitEdit(message) {
   send({ content: text, editId: message.id })
 }
 
-watch(() => chat.messages.map((item) => item.content + item.thinking + item.status).join('|'), () => scrollIfNeeded())
+watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}`).join('\n'), () => scrollIfNeeded())
 onMounted(() => scrollIfNeeded(true))
 </script>
 
@@ -75,7 +76,10 @@ onMounted(() => scrollIfNeeded(true))
         </div>
         <textarea v-if="editingId === String(message.id)" v-model="editingText" class="edit-box" rows="3" />
         <div v-else-if="message.role === 'user'" class="user-bubble">{{ message.content }}</div>
-        <div v-else class="markdown" v-html="html(message)" />
+        <template v-else>
+          <ChartPanel v-if="message.chart" :chart="message.chart" />
+          <div v-if="message.content" class="markdown" v-html="html(message)" />
+        </template>
         <span v-if="message.role === 'assistant' && message.status === 'streaming'" class="caret" />
         <div v-if="message.role === 'assistant' && message.status !== 'streaming'" class="message-actions">
           <button type="button" aria-label="复制" @click="copyMessage(message)"><Icon name="copy" :size="15" /></button>

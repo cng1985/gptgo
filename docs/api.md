@@ -11,7 +11,7 @@
 | `POST /api/conversation/delete` | 删除对话及消息 |
 | `POST /api/conversation/clear` | 确认后清空 |
 | `POST /api/message/search` | 分页读取消息 |
-| `POST /api/chat/stream` | 发送并流式回答，SSE |
+| `POST /api/chat/stream` | 发送并流式回答。普通对话和问数都走这条 SSE |
 | `POST /api/chat/optimize` | 优化提示词 |
 | `POST /api/account/register` | 注册并写入会话 cookie |
 | `POST /api/account/login` | 登录并写入会话 cookie |
@@ -21,4 +21,6 @@
 | `GET /health/live` | 存活 |
 | `GET /health/ready` | 数据库可访问 |
 
-流式事件为 `meta`、`thinking`、`delta`、`done`、`error`。标识以十进制字符串传输。
+流式事件为 `meta`、`thinking`、`delta`、`chart`、`done`、`error`。标识以十进制字符串传输。
+
+问数会读取当前 SQLite 里的每一张业务表，而不是一份写死的表白名单。问题命中问数时，`chart` 事件带上图表类型、列、行，以及本次读到的全部表。图表类型可以是 `bar`、`line`、`pie`、`metric` 或 `table`。同一份结果会写入助手消息的 `chart` 字段，重新打开对话时仍然能画出来。`delta` 里是结论文字。密码哈希和登录令牌只显示为「已隐藏」。问数只执行单条只读 `SELECT`。

@@ -28,6 +28,10 @@ APP_AI_API_KEY=你的密钥 APP_AI_BASE_URL=https://api.openai.com/v1 APP_AI_UPS
 
 模型列表里的「内置助手」始终走本地回答器。
 
+## 问数
+
+在输入框里问系统数据，例如「读取系统全部数据表，并用图表展示」「对话按模型画饼图」「列出 account」。服务会读取当前库里的每一张业务表，用 SSE 的 `chart` 事件返回柱状图、折线图、饼图或表格，页面直接画出来。密码哈希和登录令牌不会显示原文。
+
 ## 项目约定
 
 - 后端是 Go、Gin、GORM 和 Fx。业务输入输出保持一个 Request/Search 对一个 Response/PageResponse。

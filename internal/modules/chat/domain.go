@@ -1,6 +1,9 @@
 package chat
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 var Models = map[string]string{
 	"minimax-m3.1-flash": "MiniMax-M3.1-Flash",
@@ -68,6 +71,7 @@ type MessageSimple struct {
 	Role           string             `json:"role"`
 	Content        string             `json:"content"`
 	Thinking       string             `json:"thinking"`
+	Chart          json.RawMessage    `json:"chart,omitempty"`
 	Status         string             `json:"status"`
 	Attachments    []AttachmentSimple `json:"attachments"`
 	CreatedAt      time.Time          `json:"created_at"`
@@ -106,6 +110,7 @@ type ChatCompleteRequest struct {
 	AssistantMessageID int64  `json:"assistant_message_id,string"`
 	Content            string `json:"content"`
 	Thinking           string `json:"thinking"`
+	Chart              string `json:"chart,omitempty"`
 	Status             string `json:"status"`
 }
 

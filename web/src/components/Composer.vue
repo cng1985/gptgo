@@ -87,7 +87,7 @@ function toggleMic() {
         ref="box"
         v-model="chat.draft"
         rows="1"
-        placeholder="给 AI 发送消息"
+        placeholder="问数、分析，或给 AI 发送消息"
         @keydown="onKeydown"
       />
       <div class="composer-bar">
