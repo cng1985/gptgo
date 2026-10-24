@@ -201,14 +201,14 @@ func TestAskHidesSecretsAndRejectsWrites(t *testing.T) {
 	}
 }
 
-func TestAskStreamReturnsChart(t *testing.T) {
+func TestAskEndpointReturnsChart(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := openTestDB(t)
 	if err := db.Exec(`CREATE TABLE biz_order (id INTEGER PRIMARY KEY, region TEXT, amount INTEGER)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	repo := NewRepository(db)
-	resource := NewResource(repo, fakeModels{}, fakeModels{}, "builtin")
+	resource := NewResource(repo, nil, fakeModels{}, "builtin")
 	controller := NewController(resource, fakeModels{})
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
@@ -218,42 +218,17 @@ func TestAskStreamReturnsChart(t *testing.T) {
 	})
 	controller.Register(engine.Group("/api"))
 
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/chat/stream", strings.NewReader(`{"content":"问数：读取系统全部数据表，并用图表展示","model":"builtin","thinking_mode":"off"}`))
-	req.Header.Set("Content-Type", "application/json")
-	engine.ServeHTTP(recorder, req)
-	body := recorder.Body.String()
-	if recorder.Code != 200 || !strings.Contains(recorder.Header().Get("Content-Type"), "text/event-stream") {
-		t.Fatalf("http %d %s", recorder.Code, body)
+	payload := postJSON(t, engine, "/api/ask", `{"question":"问数：读取系统全部数据表，并用图表展示","thinking_mode":"off"}`)
+	if payload["code"].(float64) != 200 {
+		t.Fatalf("ask: %#v", payload)
 	}
-	if !strings.Contains(body, "event: chart") || !strings.Contains(body, "biz_order") || !strings.Contains(body, "event: delta") || !strings.Contains(body, "event: done") {
-		t.Fatalf("SSE 没有带回图表数据: %s", body)
+	data := payload["data"].(map[string]any)
+	if data["matched"] != true {
+		t.Fatalf("应该识别为问数: %#v", data)
 	}
-	if strings.Contains(body, "这是测试回答") {
-		t.Fatal("问数不应退回普通模型回答")
-	}
-	chartAt := strings.Index(body, "event: chart")
-	doneAt := strings.Index(body, "event: done")
-	if chartAt < 0 || doneAt < chartAt {
-		t.Fatalf("chart 应该先于 done: %s", body)
-	}
-
-	page := postJSON(t, engine, "/api/conversation/search", `{"page":1,"page_size":20}`)
-	rows := page["data"].([]any)
-	if len(rows) != 1 {
-		t.Fatalf("对话没有保存: %#v", page)
-	}
-	id := rows[0].(map[string]any)["id"].(string)
-	messages := postJSON(t, engine, "/api/message/search", `{"conversation_id":"`+id+`","page":1,"page_size":20}`)
-	var chart map[string]any
-	for _, item := range messages["data"].([]any) {
-		message := item.(map[string]any)
-		if message["role"] == "assistant" {
-			chart, _ = message["chart"].(map[string]any)
-		}
-	}
+	chart, _ := data["chart"].(map[string]any)
 	if chart == nil || chart["type"] != "bar" {
-		t.Fatalf("刷新后图表丢失: %#v", messages)
+		t.Fatalf("问数没有返回图表: %#v", data)
 	}
 	found := false
 	for _, item := range chart["tables"].([]any) {
@@ -262,7 +237,16 @@ func TestAskStreamReturnsChart(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("保存的图表没有包含新建表: %#v", chart["tables"])
+		t.Fatalf("图表没有包含新建表: %#v", chart["tables"])
+	}
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/chat/stream", strings.NewReader(`{"content":"问数：读取系统全部数据表，并用图表展示","model":"builtin","thinking_mode":"off"}`))
+	req.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(recorder, req)
+	body := recorder.Body.String()
+	if recorder.Code != 200 || !strings.Contains(body, "这是测试回答") || strings.Contains(body, "event: chart") {
+		t.Fatalf("普通对话不应再执行问数: %s", body)
 	}
 }
 

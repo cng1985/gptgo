@@ -5,6 +5,7 @@ import (
 	"go.uber.org/fx/fxevent"
 
 	"gptgo/internal/modules/account"
+	"gptgo/internal/modules/agent"
 	"gptgo/internal/modules/chat"
 	"gptgo/internal/modules/chatbi"
 	"gptgo/internal/platform/ai"
@@ -21,11 +22,12 @@ func New(cfg *config.Config) *fx.App {
 		fx.Provide(logging.New),
 		fx.Provide(database.Open),
 		fx.Provide(ai.NewRouter),
-		fx.Provide(ai.NewSearcher),
+		fx.Provide(func(resource *agent.Resource) chat.AgentSource { return resource }),
 		fx.Provide(server.NewEngine),
 		fx.Provide(server.NewHTTPServer),
 		chat.Module,
 		account.Module,
+		agent.Module,
 		chatbi.Module,
 		fx.Invoke(Bootstrap),
 		fx.Invoke(server.Mount),

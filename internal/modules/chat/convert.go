@@ -10,6 +10,7 @@ func ConversationEntityToSimple(entity *Conversation) *ConversationSimple {
 		ID:        entity.ID,
 		Title:     entity.Title,
 		Model:     entity.Model,
+		AgentID:   entity.AgentID,
 		UpdatedAt: entity.UpdatedAt,
 	}
 }
@@ -21,6 +22,7 @@ func ConversationEntityToResponse(entity *Conversation) *ConversationResponse {
 		Model:        entity.Model,
 		ThinkingMode: entity.ThinkingMode,
 		WebSearch:    entity.WebSearch,
+		AgentID:      entity.AgentID,
 		CreatedAt:    entity.CreatedAt,
 		UpdatedAt:    entity.UpdatedAt,
 	}

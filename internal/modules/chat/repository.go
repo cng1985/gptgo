@@ -240,6 +240,7 @@ func (r *Repository) Prepare(ctx context.Context, request *ChatStreamRequest) (r
 			ThinkingMode:       conversation.ThinkingMode,
 			Messages:           turns,
 			SearchNotes:        request.SearchNotes,
+			AgentID:            conversation.AgentID,
 		})
 		return nil
 	})
@@ -301,6 +302,7 @@ func prepareNew(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*Conversa
 			Model:        request.Model,
 			ThinkingMode: request.ThinkingMode,
 			WebSearch:    request.WebSearch,
+			AgentID:      request.AgentID,
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		}

@@ -19,6 +19,7 @@ import (
 	aiplat "gptgo/internal/platform/ai"
 	"gptgo/internal/platform/database"
 	"gptgo/internal/platform/domain"
+	apperr "gptgo/internal/platform/errors"
 )
 
 type fakeModels struct{}
@@ -38,7 +39,7 @@ func TestConversationFlow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := openTestDB(t)
 	repo := NewRepository(db)
-	resource := NewResource(repo, fakeModels{}, fakeModels{}, "builtin")
+	resource := NewResource(repo, nil, fakeModels{}, "builtin")
 	controller := NewController(resource, fakeModels{})
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
@@ -85,6 +86,59 @@ func TestConversationFlow(t *testing.T) {
 	messages := postJSON(t, engine, "/api/message/search", `{"conversation_id":"`+id+`","page":1,"page_size":20}`)
 	if messages["total"].(float64) < 2 {
 		t.Fatalf("消息没有保存: %#v", messages)
+	}
+}
+
+type stubAgents struct{}
+
+func (stubAgents) Prompt(_ context.Context, id int64) (string, string, error) {
+	if id != 7 {
+		return "", "", apperr.NotFound("智能体不存在")
+	}
+	return "周报助手", "只用三句话回答", nil
+}
+
+type captureModels struct {
+	got aiplat.Request
+}
+
+func (c *captureModels) Stream(_ context.Context, req aiplat.Request) (<-chan aiplat.Delta, error) {
+	c.got = req
+	ch := make(chan aiplat.Delta, 1)
+	ch <- aiplat.Delta{Content: "按设定回答"}
+	close(ch)
+	return ch, nil
+}
+
+func TestAgentInstructionsReachModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := openTestDB(t)
+	repo := NewRepository(db)
+	resource := NewResource(repo, stubAgents{}, fakeModels{}, "builtin")
+	models := &captureModels{}
+	controller := NewController(resource, models)
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		ctx := domain.WithScope(c.Request.Context(), domain.Scope{ActorID: 1, RequestID: "agent"})
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
+	controller.Register(engine.Group("/api"))
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/chat/stream", strings.NewReader(`{"content":"写周报","model":"builtin","thinking_mode":"off","agent_id":"7"}`))
+	req.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(recorder, req)
+	if recorder.Code != 200 || !strings.Contains(recorder.Body.String(), "按设定回答") {
+		t.Fatalf("stream: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if models.got.AgentName != "周报助手" || models.got.Instructions != "只用三句话回答" {
+		t.Fatalf("模型没有收到智能体设定: %#v", models.got)
+	}
+
+	ctx := domain.WithScope(context.Background(), domain.Scope{ActorID: 1, RequestID: "agent"})
+	if _, err := resource.Prepare(ctx, &ChatStreamRequest{Content: "写周报", Model: "builtin", ThinkingMode: "off", AgentID: 9}); err == nil {
+		t.Fatal("不存在的智能体应该被拒绝")
 	}
 }
 

@@ -11,6 +11,8 @@ type Request struct {
 	Messages     []Message
 	ThinkingMode string
 	SearchNotes  string
+	AgentName    string
+	Instructions string
 }
 
 type Message struct {
@@ -31,6 +33,13 @@ type Builtin struct {
 func (b *Builtin) Stream(ctx context.Context, req Request) (<-chan Delta, error) {
 	question := lastUser(req.Messages)
 	thinking, answer := Compose(question, req.SearchNotes, req.ThinkingMode)
+	if strings.TrimSpace(req.Instructions) != "" {
+		name := strings.TrimSpace(req.AgentName)
+		if name == "" {
+			name = "智能体"
+		}
+		answer = "我是「" + name + "」，按这个智能体的设定来回答。\n\n" + answer
+	}
 	ch := make(chan Delta, 16)
 	go func() {
 		defer close(ch)

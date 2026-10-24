@@ -3,7 +3,6 @@ import { onMounted, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import Composer from '../components/Composer.vue'
 import EmptyHero from '../components/EmptyHero.vue'
-import Mascot from '../components/Mascot.vue'
 import MessageList from '../components/MessageList.vue'
 import TopBar from '../components/TopBar.vue'
 import { chat, notify, openConversation, stop } from '../stores/chat'
@@ -17,6 +16,7 @@ async function syncRoute(id) {
     if (!chat.streaming) {
       chat.activeId = ''
       chat.messages = []
+      chat.agentId = route.query.agent ? String(route.query.agent) : ''
     }
     return
   }
@@ -29,8 +29,8 @@ async function syncRoute(id) {
   }
 }
 
-watch(() => route.params.id, (id) => {
-  syncRoute(id)
+watch(() => [route.params.id, route.query.agent], () => {
+  syncRoute(route.params.id)
 })
 
 watch(() => chat.activeId, (id) => {
@@ -53,6 +53,5 @@ onBeforeRouteLeave((to) => {
       <MessageList v-else />
       <Composer />
     </div>
-    <Mascot />
   </div>
 </template>

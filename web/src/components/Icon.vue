@@ -87,6 +87,13 @@ defineProps({
       <path d="M5 6.5v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
       <path d="M5 12.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5" />
     </template>
+    <template v-else-if="name === 'bot'">
+      <rect x="5" y="7" width="14" height="11" rx="3" />
+      <path d="M12 7V4.2" />
+      <circle cx="12" cy="3.2" r="1" fill="currentColor" stroke="none" />
+      <path d="M9 12h.01M15 12h.01" />
+      <path d="M9.5 15.2h5" />
+    </template>
     <template v-else-if="name === 'chart'">
       <path d="M4 19h16" />
       <path d="M7 16V10" />

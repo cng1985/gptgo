@@ -7,6 +7,7 @@ import ChatBIView from '../views/ChatBIView.vue'
 import DatasourceView from '../views/DatasourceView.vue'
 import BillingView from '../views/BillingView.vue'
 import UsageView from '../views/UsageView.vue'
+import AgentView from '../views/AgentView.vue'
 import { ensureSession } from '../stores/chat'
 
 export const router = createRouter({
@@ -21,6 +22,7 @@ export const router = createRouter({
         { path: '', name: 'new-chat', component: ChatView },
         { path: 'c/:id', name: 'conversation', component: ChatView },
         { path: 'workspace', name: 'workspace', component: WorkspaceView },
+        { path: 'agents', name: 'agents', component: AgentView },
         { path: 'bi', name: 'bi', component: ChatBIView },
         { path: 'datasources', name: 'datasources', component: DatasourceView },
         { path: 'billing', name: 'billing', component: BillingView },

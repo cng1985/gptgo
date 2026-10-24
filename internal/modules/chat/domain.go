@@ -30,6 +30,7 @@ type ConversationSimple struct {
 	ID        int64     `json:"id,string"`
 	Title     string    `json:"title"`
 	Model     string    `json:"model"`
+	AgentID   int64     `json:"agent_id,string"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -39,6 +40,7 @@ type ConversationResponse struct {
 	Model        string    `json:"model"`
 	ThinkingMode string    `json:"thinking_mode"`
 	WebSearch    bool      `json:"web_search"`
+	AgentID      int64     `json:"agent_id,string"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -88,6 +90,7 @@ type ChatStreamRequest struct {
 	Model               string            `json:"model"`
 	ThinkingMode        string            `json:"thinking_mode"`
 	WebSearch           bool              `json:"web_search"`
+	AgentID             int64             `json:"agent_id,string"`
 	Attachments         []AttachmentInput `json:"attachments"`
 	RegenerateMessageID int64             `json:"regenerate_message_id,string"`
 	EditMessageID       int64             `json:"edit_message_id,string"`
@@ -103,6 +106,21 @@ type ChatPrepareResponse struct {
 	ThinkingMode       string      `json:"thinking_mode"`
 	Messages           []ModelTurn `json:"messages"`
 	SearchNotes        string      `json:"search_notes,omitempty"`
+	AgentID            int64       `json:"agent_id,string,omitempty"`
+	AgentName          string      `json:"-"`
+	Instructions       string      `json:"-"`
+}
+
+type AskRequest struct {
+	Question     string `json:"question"`
+	ThinkingMode string `json:"thinking_mode"`
+}
+
+type AskResponse struct {
+	Matched  bool      `json:"matched"`
+	Thinking string    `json:"thinking,omitempty"`
+	Answer   string    `json:"answer,omitempty"`
+	Chart    *AskChart `json:"chart,omitempty"`
 }
 
 type ChatCompleteRequest struct {
