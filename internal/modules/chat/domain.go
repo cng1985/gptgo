@@ -74,6 +74,7 @@ type MessageSimple struct {
 	Content        string             `json:"content"`
 	Thinking       string             `json:"thinking"`
 	Chart          json.RawMessage    `json:"chart,omitempty"`
+	Tools          json.RawMessage    `json:"tools,omitempty"`
 	Status         string             `json:"status"`
 	Attachments    []AttachmentSimple `json:"attachments"`
 	CreatedAt      time.Time          `json:"created_at"`
@@ -129,6 +130,7 @@ type ChatCompleteRequest struct {
 	Content            string `json:"content"`
 	Thinking           string `json:"thinking"`
 	Chart              string `json:"chart,omitempty"`
+	Tools              string `json:"tools,omitempty"`
 	Status             string `json:"status"`
 }
 

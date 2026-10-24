@@ -7,6 +7,7 @@ import { chat, resetDraft, stop } from '../stores/chat'
 
 const features = [
   { path: '/agents', icon: 'bot', title: '智能体', text: '创建有自己设定的助手，并直接开始对话' },
+  { path: '/tools', icon: 'plug', title: '工具与 MCP', text: '调用内置工具、HTTP 工具和 MCP 服务' },
   { path: '/bi', icon: 'chart', title: '问数', text: '查询本库数据表，或连接自己的数据库' },
   { path: '/datasources', icon: 'database', title: '数据源', text: '配置 MySQL、PostgreSQL、SQL Server' },
   { path: '/billing', icon: 'coin', title: '账单', text: '余额、赠送额度和充值记录' },

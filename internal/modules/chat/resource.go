@@ -229,6 +229,10 @@ func (r *Resource) Complete(ctx context.Context, request *ChatCompleteRequest) (
 	if request.Chart != "" && (!json.Valid([]byte(request.Chart)) || len(request.Chart) > 500000) {
 		request.Chart = ""
 	}
+	request.Tools = strings.TrimSpace(request.Tools)
+	if request.Tools != "" && (!json.Valid([]byte(request.Tools)) || len(request.Tools) > 100000) {
+		request.Tools = ""
+	}
 	return r.repo.Complete(ctx, request)
 }
 

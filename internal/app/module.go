@@ -8,6 +8,7 @@ import (
 	"gptgo/internal/modules/agent"
 	"gptgo/internal/modules/chat"
 	"gptgo/internal/modules/chatbi"
+	"gptgo/internal/modules/toolkit"
 	"gptgo/internal/platform/ai"
 	"gptgo/internal/platform/config"
 	"gptgo/internal/platform/database"
@@ -29,6 +30,7 @@ func New(cfg *config.Config) *fx.App {
 		account.Module,
 		agent.Module,
 		chatbi.Module,
+		toolkit.Module,
 		fx.Invoke(Bootstrap),
 		fx.Invoke(server.Mount),
 		fx.Invoke(database.Hook),

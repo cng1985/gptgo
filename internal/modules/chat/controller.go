@@ -9,10 +9,11 @@ import (
 type Controller struct {
 	resource *Resource
 	models   Streamer
+	tools    ToolSource
 }
 
-func NewController(resource *Resource, models Streamer) *Controller {
-	return &Controller{resource: resource, models: models}
+func NewController(resource *Resource, models Streamer, tools ToolSource) *Controller {
+	return &Controller{resource: resource, models: models, tools: tools}
 }
 
 func (c *Controller) Register(api *gin.RouterGroup) {
@@ -129,7 +130,7 @@ func (c *Controller) messages(ctx *gin.Context) {
 }
 
 func (c *Controller) stream(ctx *gin.Context) {
-	ServeStream(ctx, c.resource, c.models)
+	ServeStream(ctx, c.resource, c.models, c.tools)
 }
 
 func (c *Controller) ask(ctx *gin.Context) {
