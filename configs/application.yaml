@@ -1,0 +1,40 @@
+app:
+  name: chatbi
+  data_dir: ./data
+  seed_demo: true
+server:
+  host: 127.0.0.1
+  port: 8080
+  read_header_timeout: 5s
+  idle_timeout: 60s
+  max_header_bytes: 1048576
+  shutdown_timeout: 30s
+  request_timeout: 30s
+  sse_timeout: 15m
+  max_body_bytes: 2097152
+  trusted_proxies: []
+database:
+  enabled: true
+  driver: sqlite
+  max_open_conns: 1
+  max_idle_conns: 1
+  conn_max_lifetime: 30m
+  batch_size: 100
+  sqlite:
+    path: app.db
+    foreign_keys: true
+    busy_timeout: 5s
+    journal_mode: DELETE
+auth:
+  enabled: false
+  session_ttl: 8h
+logging:
+  level: info
+  format: json
+ai:
+  provider: auto
+  base_url: https://api.openai.com/v1
+  api_key: ""
+  default_model: minimax-m3.1-flash
+  upstream_model: ""
+  request_timeout: 120s
