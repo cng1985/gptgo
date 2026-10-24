@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from './Icon.vue'
 import SparkleMark from './SparkleMark.vue'
-import { chat, refreshConversations, removeConversation, renameConversation, resetDraft, saveName, stop } from '../stores/chat'
+import { chat, logout, refreshConversations, removeConversation, renameConversation, resetDraft, saveName, stop } from '../stores/chat'
 import { groupLabel } from '../utils/time'
 
 const route = useRoute()
@@ -117,6 +117,16 @@ async function saveProfile() {
     chat.toast = error.message
   }
 }
+
+async function signOut() {
+  profileOpen.value = false
+  try {
+    await logout()
+    router.push('/login')
+  } catch (error) {
+    chat.toast = error.message
+  }
+}
 </script>
 
 <template>
@@ -174,10 +184,10 @@ async function saveProfile() {
       </button>
       <div class="user-row">
         <button class="user-button" type="button" @click="openProfile">
-          <span class="avatar">{{ (chat.account.name || 'A').slice(0, 1).toUpperCase() }}</span>
+          <span class="avatar">{{ (chat.account.name || chat.account.username || 'A').slice(0, 1).toUpperCase() }}</span>
           <span class="user-copy">
-            <strong>{{ chat.account.name || 'ada' }}</strong>
-            <small>个人中心</small>
+            <strong>{{ chat.account.name || chat.account.username || 'ada' }}</strong>
+            <small>{{ chat.account.username || '个人中心' }}</small>
           </span>
         </button>
         <button class="more always" type="button" aria-label="个人中心" @click="openProfile">
@@ -189,7 +199,8 @@ async function saveProfile() {
             <input v-model="nameDraft" maxlength="20" @keydown.enter.prevent="saveProfile" />
           </label>
           <button type="button" @click="saveProfile">保存</button>
-          <p class="about">ChatBI AI 会记住这台设备上的对话。模型密钥通过环境变量接入。</p>
+          <button v-if="chat.account.username" type="button" class="danger" @click="signOut">退出登录</button>
+          <p class="about">登录后只显示这个账号的对话。模型密钥通过环境变量接入。</p>
         </div>
       </div>
     </div>

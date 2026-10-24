@@ -8,13 +8,27 @@ import (
 	"gptgo/internal/platform/config"
 )
 
+var (
+	version   = "dev"
+	commit    = "none"
+	buildTime = "unknown"
+)
+
 type BuildInfo struct {
 	Version   string
 	Commit    string
 	BuildTime string
 }
 
-func Run(info BuildInfo) error {
+func Run() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	info := BuildInfo{Version: version, Commit: commit, BuildTime: buildTime}
 	fs := flag.NewFlagSet("chatbi", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	baseDir := fs.String("base-dir", "", "应用根目录")

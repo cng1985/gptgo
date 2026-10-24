@@ -126,6 +126,33 @@ func TestDeleteRollsBackWhenMessageDeleteFails(t *testing.T) {
 	}
 }
 
+func TestConversationsStayWithOwner(t *testing.T) {
+	db := openTestDB(t)
+	repo := NewRepository(db)
+	ctx1 := domain.WithScope(context.Background(), domain.Scope{ActorID: 1, RequestID: "a"})
+	ctx2 := domain.WithScope(context.Background(), domain.Scope{ActorID: 2, RequestID: "b"})
+	created, err := repo.Create(ctx1, &ConversationRequest{Title: "仅用户一", Model: "builtin", ThinkingMode: "off"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := repo.Search(ctx2, &ConversationSearch{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 0 || len(page.Data) != 0 {
+		t.Fatalf("其他用户不应看到对话: %#v", page)
+	}
+	if _, err := repo.One(ctx2, &ConversationRequest{ID: created.Data.ID}); err == nil {
+		t.Fatal("其他用户不能读取对话")
+	}
+	if _, err := repo.Clear(ctx2, &ConversationClearRequest{Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.One(ctx1, &ConversationRequest{ID: created.Data.ID}); err != nil {
+		t.Fatal("清空其他用户的对话时不应删掉自己的")
+	}
+}
+
 func postJSON(t *testing.T, engine *gin.Engine, path, body string) map[string]any {
 	t.Helper()
 	recorder := httptest.NewRecorder()

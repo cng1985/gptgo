@@ -20,6 +20,10 @@ onMounted(async () => {
   try {
     await boot()
   } catch (error) {
+    if (error.code === 401) {
+      router.push('/login')
+      return
+    }
     notify(error.message || '加载失败')
   }
 })

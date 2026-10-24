@@ -16,7 +16,11 @@ import (
 
 const requestIDHeader = "X-Request-Id"
 
-func Install(engine *gin.Engine, cfg *config.Config, log *slog.Logger) {
+type ActorResolver interface {
+	Resolve(c *gin.Context) (domain.Scope, bool)
+}
+
+func Install(engine *gin.Engine, cfg *config.Config, log *slog.Logger, actors ActorResolver) {
 	if err := engine.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
 		log.Error("trusted proxies rejected", "err", err.Error())
 	}
@@ -26,7 +30,7 @@ func Install(engine *gin.Engine, cfg *config.Config, log *slog.Logger) {
 	engine.Use(AccessLog(log))
 	engine.Use(MaxBody(cfg.Server.MaxBodyBytes))
 	engine.Use(Deadline(cfg))
-	engine.Use(LocalActor())
+	engine.Use(Actor(actors))
 }
 
 func RequestID() gin.HandlerFunc {
@@ -41,12 +45,21 @@ func RequestID() gin.HandlerFunc {
 	}
 }
 
-func LocalActor() gin.HandlerFunc {
+func Actor(resolver ActorResolver) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, _ := c.Get("request_id")
-		requestID, _ := id.(string)
-		ctx := domain.WithScope(c.Request.Context(), domain.Scope{ActorID: 1, RequestID: requestID})
-		c.Request = c.Request.WithContext(ctx)
+		if resolver == nil {
+			c.Next()
+			return
+		}
+		scope, ok := resolver.Resolve(c)
+		if !ok || scope.ActorID <= 0 {
+			c.Next()
+			return
+		}
+		if scope.RequestID == "" {
+			scope.RequestID = c.GetString("request_id")
+		}
+		c.Request = c.Request.WithContext(domain.WithScope(c.Request.Context(), scope))
 		c.Next()
 	}
 }
