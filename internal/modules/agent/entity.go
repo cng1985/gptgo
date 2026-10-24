@@ -11,6 +11,8 @@ type Agent struct {
 	Model        string
 	Opening      string
 	Suggestions  string
+	Tools        string
+	McpIDs       string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

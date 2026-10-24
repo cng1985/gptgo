@@ -26,6 +26,8 @@ export async function saveAgent(body) {
     model: body.model,
     opening: body.opening,
     suggestions: body.suggestions,
+    tools: body.tools || [],
+    mcp_ids: (body.mcpIds || []).map((id) => String(id)),
   }
   if (body.id) payload.id = String(body.id)
   const result = await post(path, payload)

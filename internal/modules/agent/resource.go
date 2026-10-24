@@ -8,18 +8,28 @@ import (
 	"gptgo/internal/platform/response"
 )
 
-type Resource struct {
-	repo *Repository
+type ServerChecker interface {
+	Owns(ctx context.Context, ids []int64) error
 }
 
-func NewResource(repo *Repository) *Resource {
-	return &Resource{repo: repo}
+type Resource struct {
+	repo    *Repository
+	servers ServerChecker
+}
+
+func NewResource(repo *Repository, servers ServerChecker) *Resource {
+	return &Resource{repo: repo, servers: servers}
 }
 
 func (r *Resource) Create(ctx context.Context, request *AgentRequest) (response.Response[AgentResponse], error) {
 	var zero response.Response[AgentResponse]
 	if err := prepare(request, false); err != nil {
 		return zero, err
+	}
+	if r.servers != nil {
+		if err := r.servers.Owns(ctx, []int64(request.McpIDs)); err != nil {
+			return zero, err
+		}
 	}
 	return r.repo.Create(ctx, request)
 }
@@ -31,6 +41,11 @@ func (r *Resource) Update(ctx context.Context, request *AgentRequest) (response.
 	}
 	if err := prepare(request, true); err != nil {
 		return zero, err
+	}
+	if r.servers != nil {
+		if err := r.servers.Owns(ctx, []int64(request.McpIDs)); err != nil {
+			return zero, err
+		}
 	}
 	return r.repo.Update(ctx, request)
 }
@@ -120,10 +135,60 @@ func prepare(request *AgentRequest, updating bool) error {
 		}
 	}
 	request.Suggestions = cleaned
+	tools, err := cleanTools(request.Tools)
+	if err != nil {
+		return err
+	}
+	request.Tools = tools
+	ids, err := cleanIDs([]int64(request.McpIDs))
+	if err != nil {
+		return err
+	}
+	request.McpIDs = IDList(ids)
 	if updating && request.ID <= 0 {
 		return apperr.Invalid("智能体不存在")
 	}
 	return nil
+}
+
+func cleanTools(items []string) ([]string, error) {
+	allowed := map[string]bool{"clock": true, "ask_catalog": true}
+	cleaned := make([]string, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" || seen[item] {
+			continue
+		}
+		if !allowed[item] {
+			return nil, apperr.Invalid("不支持的工具")
+		}
+		seen[item] = true
+		cleaned = append(cleaned, item)
+		if len(cleaned) > 8 {
+			return nil, apperr.Invalid("工具过多")
+		}
+	}
+	return cleaned, nil
+}
+
+func cleanIDs(ids []int64) ([]int64, error) {
+	cleaned := make([]int64, 0, len(ids))
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if id <= 0 {
+			return nil, apperr.Invalid("MCP 服务无效")
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		cleaned = append(cleaned, id)
+		if len(cleaned) > 8 {
+			return nil, apperr.Invalid("MCP 服务过多")
+		}
+	}
+	return cleaned, nil
 }
 
 func normalizePage(page, size, fallback int) (int, int, error) {

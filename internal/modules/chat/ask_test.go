@@ -208,7 +208,7 @@ func TestAskEndpointReturnsChart(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := NewRepository(db)
-	resource := NewResource(repo, nil, fakeModels{}, "builtin")
+	resource := NewResource(repo, nil, fakeModels{}, nil, "builtin")
 	controller := NewController(resource, fakeModels{})
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {

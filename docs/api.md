@@ -19,6 +19,13 @@
 | `POST /api/agent/one` | 智能体详情 |
 | `POST /api/agent/search` | 分页搜索当前账号的智能体 |
 | `POST /api/agent/delete` | 删除智能体，已有对话保留 |
+| `POST /api/tool/search` | 列出可勾选的内置工具 |
+| `POST /api/mcp/create` | 为当前账号创建 MCP 服务 |
+| `POST /api/mcp/update` | 修改 MCP 服务。省略 `headers` 表示不改，`{}` 表示清空 |
+| `POST /api/mcp/one` | MCP 详情，只返回请求头名称 |
+| `POST /api/mcp/search` | 分页搜索当前账号的 MCP 服务 |
+| `POST /api/mcp/delete` | 删除 MCP 服务 |
+| `POST /api/mcp/test` | 连接并列出工具，不保存工具列表 |
 | `POST /api/account/register` | 注册并写入会话 cookie |
 | `POST /api/account/login` | 登录并写入会话 cookie |
 | `POST /api/account/logout` | 退出并清除会话 |
@@ -40,6 +47,8 @@
 | `GET /health/live` | 存活 |
 | `GET /health/ready` | 数据库可访问 |
 
-流式事件为 `meta`、`thinking`、`delta`、`done`、`error`。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。
+流式事件为 `meta`、`thinking`、`delta`、`tool`、`done`、`error`。`tool` 带 `name`、`arguments`、`result` 和 `ok`。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定和它勾选的工具。
+
+智能体的 `tools` 目前接受 `clock` 和 `ask_catalog`。`mcp_ids` 是当前账号下的 MCP 服务标识。MCP 的 `transport` 为 `http` 或 `stdio`。HTTP 只接受 `http` 和 `https`。本地命令不会经过 shell，并拒绝分隔符和上级目录。
 
 `POST /api/ask` 读取当前 SQLite 里的每一张业务表，而不是一份写死的表白名单。命中问数时，`data.chart` 带上图表类型、列、行，以及本次读到的全部表。图表类型可以是 `bar`、`line`、`pie`、`metric` 或 `table`。`data.answer` 是结论文字。密码哈希和登录令牌只显示为「已隐藏」。问数只执行单条只读 `SELECT`。没有识别成问数时 `matched` 为 false，不会查询。

@@ -10,6 +10,25 @@ func decodeSuggestions(raw string) []string {
 	return items
 }
 
+func decodeIDs(raw string) []int64 {
+	var ids []int64
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil || ids == nil {
+		return []int64{}
+	}
+	return ids
+}
+
+func encodeIDs(ids []int64) string {
+	if ids == nil {
+		ids = []int64{}
+	}
+	raw, err := json.Marshal(ids)
+	if err != nil {
+		return "[]"
+	}
+	return string(raw)
+}
+
 func encodeSuggestions(items []string) string {
 	if items == nil {
 		items = []string{}
@@ -42,6 +61,8 @@ func toResponse(entity *Agent) AgentResponse {
 		Model:        entity.Model,
 		Opening:      entity.Opening,
 		Suggestions:  decodeSuggestions(entity.Suggestions),
+		Tools:        decodeSuggestions(entity.Tools),
+		McpIDs:       IDList(decodeIDs(entity.McpIDs)),
 		CreatedAt:    entity.CreatedAt,
 		UpdatedAt:    entity.UpdatedAt,
 	}

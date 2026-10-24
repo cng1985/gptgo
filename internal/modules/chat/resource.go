@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	aiplat "gptgo/internal/platform/ai"
 	"gptgo/internal/platform/domain"
 	apperr "gptgo/internal/platform/errors"
 	"gptgo/internal/platform/response"
@@ -20,18 +21,24 @@ type Optimizer interface {
 	Optimize(ctx context.Context, content, model string) (string, error)
 }
 
+type ToolSource interface {
+	ForAgent(ctx context.Context, agentID int64) ([]aiplat.Tool, error)
+	Call(ctx context.Context, tool aiplat.Tool, arguments string) (string, error)
+}
+
 type Resource struct {
 	repo         *Repository
 	agents       AgentSource
 	optimizer    Optimizer
+	tools        ToolSource
 	defaultModel string
 }
 
-func NewResource(repo *Repository, agents AgentSource, optimizer Optimizer, defaultModel string) *Resource {
+func NewResource(repo *Repository, agents AgentSource, optimizer Optimizer, tools ToolSource, defaultModel string) *Resource {
 	if strings.TrimSpace(defaultModel) == "" {
 		defaultModel = "minimax-m3.1-flash"
 	}
-	return &Resource{repo: repo, agents: agents, optimizer: optimizer, defaultModel: defaultModel}
+	return &Resource{repo: repo, agents: agents, optimizer: optimizer, tools: tools, defaultModel: defaultModel}
 }
 
 func (r *Resource) Create(ctx context.Context, request *ConversationRequest) (response.Response[ConversationResponse], error) {
@@ -228,6 +235,10 @@ func (r *Resource) Complete(ctx context.Context, request *ChatCompleteRequest) (
 	request.Chart = strings.TrimSpace(request.Chart)
 	if request.Chart != "" && (!json.Valid([]byte(request.Chart)) || len(request.Chart) > 500000) {
 		request.Chart = ""
+	}
+	request.Tools = strings.TrimSpace(request.Tools)
+	if request.Tools != "" && (!json.Valid([]byte(request.Tools)) || len(request.Tools) > 20000) {
+		request.Tools = ""
 	}
 	return r.repo.Complete(ctx, request)
 }

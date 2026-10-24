@@ -43,6 +43,8 @@ func (r *Repository) Create(ctx context.Context, request *AgentRequest) (respons
 		Model:        request.Model,
 		Opening:      request.Opening,
 		Suggestions:  encodeSuggestions(request.Suggestions),
+		Tools:        encodeSuggestions(request.Tools),
+		McpIDs:       encodeIDs([]int64(request.McpIDs)),
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -66,6 +68,8 @@ func (r *Repository) Update(ctx context.Context, request *AgentRequest) (respons
 		"model":        request.Model,
 		"opening":      request.Opening,
 		"suggestions":  encodeSuggestions(request.Suggestions),
+		"tools":        encodeSuggestions(request.Tools),
+		"mcp_ids":      encodeIDs([]int64(request.McpIDs)),
 		"updated_at":   now,
 	})
 	if res.Error != nil {

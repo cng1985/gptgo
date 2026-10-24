@@ -8,6 +8,7 @@ import (
 	"gptgo/internal/modules/agent"
 	"gptgo/internal/modules/chat"
 	"gptgo/internal/modules/chatbi"
+	"gptgo/internal/modules/mcp"
 	"gptgo/internal/platform/ai"
 	"gptgo/internal/platform/config"
 	"gptgo/internal/platform/database"
@@ -23,12 +24,17 @@ func New(cfg *config.Config) *fx.App {
 		fx.Provide(database.Open),
 		fx.Provide(ai.NewRouter),
 		fx.Provide(func(resource *agent.Resource) chat.AgentSource { return resource }),
+		fx.Provide(func(repo *mcp.Repository) agent.ServerChecker { return repo }),
+		fx.Provide(func(agents *agent.Repository, conversations *chat.Repository, servers *mcp.Repository) chat.ToolSource {
+			return mcp.NewRunner(agents, conversations, servers)
+		}),
 		fx.Provide(server.NewEngine),
 		fx.Provide(server.NewHTTPServer),
 		chat.Module,
 		account.Module,
 		agent.Module,
 		chatbi.Module,
+		mcp.Module,
 		fx.Invoke(Bootstrap),
 		fx.Invoke(server.Mount),
 		fx.Invoke(database.Hook),

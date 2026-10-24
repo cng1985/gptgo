@@ -108,7 +108,7 @@ button:disabled { cursor: default; }
   border-radius: 8px;
   text-align: left;
 }
-.search-entry:hover, .search-box:focus-within { background: var(--hover); }
+.search-entry:hover, .search-entry.active, .search-box:focus-within { background: var(--hover); }
 .search-box input { border: 0; outline: none; background: transparent; width: 100%; font-size: 14px; }
 .history { flex: 1; overflow: auto; margin-top: 8px; padding-right: 2px; }
 .history-group h3 { margin: 14px 8px 4px; font-size: 12px; font-weight: 500; color: var(--text-3); }
@@ -328,6 +328,12 @@ button:disabled { cursor: default; }
 .thinking { margin-bottom: 8px; color: var(--text-2); }
 .thinking summary { cursor: pointer; }
 .thinking p { white-space: pre-wrap; margin: 8px 0 0; font-size: 13px; }
+.tool-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; padding: 0; list-style: none; }
+.tool-trace { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bubble); }
+.tool-trace summary { cursor: pointer; font-size: 13px; }
+.tool-trace pre { white-space: pre-wrap; margin: 8px 0 0; font-size: 12px; font-family: var(--mono); }
+.check-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; }
+.check-line input { width: auto; }
 .markdown { line-height: 1.7; font-size: 15px; }
 .markdown p { margin: 0 0 10px; }
 .markdown h2 { font-size: 18px; margin: 16px 0 8px; }

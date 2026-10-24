@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import PageHead from '../components/PageHead.vue'
 import { models, notify } from '../stores/chat'
 import { agents, loadAgent, openAgentChat, refreshAgents, removeAgent, saveAgent } from '../stores/agent'
+import { mcp, refreshServers } from '../stores/mcp'
 
 const router = useRouter()
 const saving = ref(false)
@@ -18,6 +19,8 @@ function blank() {
     model: 'builtin',
     opening: '',
     suggestions: ['', '', '', ''],
+    tools: [],
+    mcpIds: [],
   }
 }
 
@@ -32,6 +35,8 @@ function fill(agent) {
     model: agent.model || 'builtin',
     opening: agent.opening || '',
     suggestions: suggestions.slice(0, 4),
+    tools: [...(agent.tools || [])],
+    mcpIds: [...(agent.mcp_ids || [])].map((id) => String(id)),
   })
 }
 
@@ -42,6 +47,7 @@ function reset() {
 async function reload() {
   try {
     await refreshAgents()
+    await refreshServers()
   } catch (error) {
     notify(error.message || '加载失败')
   }
@@ -66,6 +72,8 @@ async function save() {
       model: form.model,
       opening: form.opening.trim(),
       suggestions: form.suggestions.map((item) => item.trim()).filter(Boolean),
+      tools: form.tools,
+      mcpIds: form.mcpIds,
     })
     fill(saved)
     notify('已保存智能体')
@@ -104,7 +112,7 @@ onMounted(reload)
     <div class="panel-body">
       <header class="panel-intro">
         <h1>按你的设定回答</h1>
-        <p>每个智能体有自己的名称、开场白和回复规则。开始对话后，后续回答都会带上这段设定。问数仍然在单独的页面里。</p>
+        <p>每个智能体有自己的名称、开场白和回复规则。开始对话后，后续回答都会带上这段设定。勾选工具后，对话里可以调用当前时间和本库问数，也可以使用已启用的 MCP 服务。</p>
       </header>
       <div class="agent-layout">
         <section class="panel-card">
@@ -152,6 +160,19 @@ onMounted(reload)
           <div class="field">
             建议问题
             <input v-for="(_, index) in form.suggestions" :key="index" v-model="form.suggestions[index]" maxlength="80" placeholder="选填" />
+          </div>
+          <div class="field">
+            工具
+            <label class="check-line"><input v-model="form.tools" type="checkbox" value="clock" /> 当前时间</label>
+            <label class="check-line"><input v-model="form.tools" type="checkbox" value="ask_catalog" /> 本库问数</label>
+          </div>
+          <div class="field">
+            MCP
+            <label v-for="item in mcp.items" :key="item.id" class="check-line">
+              <input v-model="form.mcpIds" type="checkbox" :value="String(item.id)" />
+              {{ item.name }}{{ item.enabled ? '' : '（未启用）' }}
+            </label>
+            <p v-if="!mcp.items.length" class="muted">还没有 MCP 服务。可以先到侧栏的 MCP 页面添加。</p>
           </div>
           <div class="form-actions">
             <button class="primary" type="submit" :disabled="saving">{{ saving ? '保存中' : '保存' }}</button>

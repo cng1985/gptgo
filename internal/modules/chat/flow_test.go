@@ -39,7 +39,7 @@ func TestConversationFlow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := openTestDB(t)
 	repo := NewRepository(db)
-	resource := NewResource(repo, nil, fakeModels{}, "builtin")
+	resource := NewResource(repo, nil, fakeModels{}, nil, "builtin")
 	controller := NewController(resource, fakeModels{})
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
@@ -114,7 +114,7 @@ func TestAgentInstructionsReachModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := openTestDB(t)
 	repo := NewRepository(db)
-	resource := NewResource(repo, stubAgents{}, fakeModels{}, "builtin")
+	resource := NewResource(repo, stubAgents{}, fakeModels{}, nil, "builtin")
 	models := &captureModels{}
 	controller := NewController(resource, models)
 	engine := gin.New()

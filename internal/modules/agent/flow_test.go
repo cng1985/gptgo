@@ -17,13 +17,14 @@ import (
 
 	"gptgo/internal/platform/database"
 	"gptgo/internal/platform/domain"
+	apperr "gptgo/internal/platform/errors"
 )
 
 func TestAgentFlow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := openTestDB(t)
 	repo := NewRepository(db)
-	resource := NewResource(repo)
+	resource := NewResource(repo, nil)
 	controller := NewController(resource)
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
@@ -87,9 +88,46 @@ func TestAgentFlow(t *testing.T) {
 	}
 }
 
+func TestAgentSavesTools(t *testing.T) {
+	db := openTestDB(t)
+	repo := NewRepository(db)
+	ctx := domain.WithScope(context.Background(), domain.Scope{ActorID: 1})
+	created, err := NewResource(repo, allowServer{3}).Create(ctx, &AgentRequest{
+		Name: "报时", Instructions: "直接回答时间。", Model: "builtin",
+		Tools: []string{"clock", "clock", "ask_catalog"}, McpIDs: IDList{3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Data.Tools) != 2 || created.Data.Tools[0] != "clock" || created.Data.McpIDs[0] != 3 {
+		t.Fatalf("工具没有保存: %#v", created.Data)
+	}
+	if _, err := NewResource(repo, allowServer{3}).Create(ctx, &AgentRequest{
+		Name: "坏工具", Instructions: "不行", Model: "builtin", Tools: []string{"shell"},
+	}); err == nil {
+		t.Fatal("未知工具应该被拒绝")
+	}
+	if _, err := NewResource(repo, allowServer{3}).Create(ctx, &AgentRequest{
+		Name: "别人的服务", Instructions: "不行", Model: "builtin", McpIDs: IDList{9},
+	}); err == nil {
+		t.Fatal("不属于当前账号的 MCP 服务应该被拒绝")
+	}
+}
+
+type allowServer struct{ id int64 }
+
+func (s allowServer) Owns(_ context.Context, ids []int64) error {
+	for _, id := range ids {
+		if id != s.id {
+			return apperr.Invalid("包含不属于当前账号的 MCP 服务")
+		}
+	}
+	return nil
+}
+
 func TestAgentRejectsEmptyInstructions(t *testing.T) {
 	db := openTestDB(t)
-	resource := NewResource(NewRepository(db))
+	resource := NewResource(NewRepository(db), nil)
 	ctx := domain.WithScope(context.Background(), domain.Scope{ActorID: 1})
 	if _, err := resource.Create(ctx, &AgentRequest{Name: "空设定", Model: "builtin"}); err == nil {
 		t.Fatal("没有设定的智能体应该被拒绝")

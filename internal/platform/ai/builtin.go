@@ -2,9 +2,25 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 )
+
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments string
+}
+
+type Tool struct {
+	Name        string
+	Description string
+	Parameters  json.RawMessage
+	Kind        string
+	ServerID    int64
+	RemoteName  string
+}
 
 type Request struct {
 	Model        string
@@ -13,17 +29,21 @@ type Request struct {
 	SearchNotes  string
 	AgentName    string
 	Instructions string
+	Tools        []Tool
 }
 
 type Message struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	ToolCallID string
+	ToolCalls  []ToolCall
 }
 
 type Delta struct {
-	Thinking string
-	Content  string
-	Err      error
+	Thinking  string
+	Content   string
+	ToolCalls []ToolCall
+	Err       error
 }
 
 type Builtin struct {
@@ -31,8 +51,20 @@ type Builtin struct {
 }
 
 func (b *Builtin) Stream(ctx context.Context, req Request) (<-chan Delta, error) {
+	if calls := builtinToolCalls(req); len(calls) > 0 {
+		ch := make(chan Delta, 1)
+		go func() {
+			defer close(ch)
+			select {
+			case <-ctx.Done():
+			case ch <- Delta{ToolCalls: calls}:
+			}
+		}()
+		return ch, nil
+	}
 	question := lastUser(req.Messages)
 	thinking, answer := Compose(question, req.SearchNotes, req.ThinkingMode)
+	answer = withToolResults(req.Messages, answer)
 	if strings.TrimSpace(req.Instructions) != "" {
 		name := strings.TrimSpace(req.AgentName)
 		if name == "" {
@@ -53,6 +85,145 @@ func (b *Builtin) Stream(ctx context.Context, req Request) (<-chan Delta, error)
 
 func (b *Builtin) Optimize(_ context.Context, content, _ string) (string, error) {
 	return optimizeText(content), nil
+}
+
+func builtinToolCalls(req Request) []ToolCall {
+	if len(req.Tools) == 0 || toolResultFollowsUser(req.Messages) {
+		return nil
+	}
+	question := lastUser(req.Messages)
+	if strings.TrimSpace(question) == "" {
+		return nil
+	}
+	calls := make([]ToolCall, 0, 3)
+	for _, tool := range req.Tools {
+		if len(calls) >= 3 {
+			break
+		}
+		arguments, ok := matchTool(tool, question)
+		if !ok {
+			continue
+		}
+		calls = append(calls, ToolCall{
+			ID:        "call_" + tool.Name + "_" + itoa(len(calls)+1),
+			Name:      tool.Name,
+			Arguments: arguments,
+		})
+	}
+	return calls
+}
+
+func toolResultFollowsUser(messages []Message) bool {
+	last := -1
+	for i := range messages {
+		if messages[i].Role == "user" {
+			last = i
+		}
+	}
+	if last < 0 {
+		return false
+	}
+	for _, message := range messages[last+1:] {
+		if message.Role == "tool" {
+			return true
+		}
+	}
+	return false
+}
+
+func matchTool(tool Tool, question string) (string, bool) {
+	switch tool.Name {
+	case "clock":
+		if containsAny(question, []string{"时间", "几点", "日期", "星期", "现在"}) {
+			return `{"timezone":"Asia/Shanghai"}`, true
+		}
+	case "ask_catalog":
+		if containsAny(question, []string{"问数", "数据表", "多少条", "有哪些表", "字段", "条数"}) {
+			raw, err := json.Marshal(map[string]string{"question": question})
+			if err != nil {
+				return "", false
+			}
+			return string(raw), true
+		}
+	default:
+		if tool.Name != "" && strings.Contains(strings.ToLower(question), strings.ToLower(tool.Name)) {
+			return fillToolArgs(tool, question), true
+		}
+		if tool.RemoteName != "" && strings.Contains(strings.ToLower(question), strings.ToLower(tool.RemoteName)) {
+			return fillToolArgs(tool, question), true
+		}
+	}
+	return "", false
+}
+
+func fillToolArgs(tool Tool, question string) string {
+	var schema struct {
+		Properties map[string]struct {
+			Type string `json:"type"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	}
+	if json.Unmarshal(tool.Parameters, &schema) != nil {
+		return "{}"
+	}
+	wanted := map[string]bool{"query": true, "question": true, "text": true, "input": true}
+	payload := map[string]string{}
+	for _, name := range schema.Required {
+		prop, ok := schema.Properties[name]
+		if !ok || (prop.Type != "" && prop.Type != "string") || !wanted[name] {
+			continue
+		}
+		payload[name] = question
+	}
+	if len(payload) == 0 {
+		return "{}"
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
+func containsAny(text string, keys []string) bool {
+	for _, key := range keys {
+		if strings.Contains(text, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func withToolResults(messages []Message, answer string) string {
+	notes := make([]string, 0)
+	for _, message := range messages {
+		if message.Role != "tool" {
+			continue
+		}
+		text := strings.TrimSpace(message.Content)
+		if text == "" {
+			continue
+		}
+		notes = append(notes, text)
+	}
+	if len(notes) == 0 {
+		return answer
+	}
+	return "根据工具结果：\n" + strings.Join(notes, "\n") + "\n\n" + answer
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }
 
 func lastUser(messages []Message) string {

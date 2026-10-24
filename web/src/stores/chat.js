@@ -223,6 +223,7 @@ export async function send({ content, regenerateId, editId } = {}) {
     role: 'assistant',
     content: '',
     thinking: '',
+    tools: [],
     status: 'streaming',
     attachments: [],
   }
@@ -233,6 +234,7 @@ export async function send({ content, regenerateId, editId } = {}) {
       chat.messages[assistantIndex].content = ''
       chat.messages[assistantIndex].thinking = ''
       chat.messages[assistantIndex].chart = null
+      chat.messages[assistantIndex].tools = []
       chat.messages[assistantIndex].status = 'streaming'
     }
   } else if (editId) {
@@ -292,6 +294,10 @@ export async function send({ content, regenerateId, editId } = {}) {
         if (event === 'thinking' && current) current.thinking += payload.delta || ''
         if (event === 'delta' && current) current.content += payload.delta || ''
         if (event === 'chart' && current) current.chart = payload
+        if (event === 'tool' && current) {
+          current.tools = current.tools || []
+          current.tools.push(payload)
+        }
         if (event === 'error') {
           if (current) current.status = 'error'
           notify(payload.msg || '生成失败')
@@ -304,7 +310,7 @@ export async function send({ content, regenerateId, editId } = {}) {
     })
     const current = assistant()
     if (current && current.status === 'streaming') current.status = 'done'
-    if (current && !current.content && !current.thinking && chat.activeId) {
+    if (current && !current.content && !current.thinking && !(current.tools && current.tools.length) && chat.activeId) {
       chat.streaming = false
       await openConversation(chat.activeId, { force: true })
     }

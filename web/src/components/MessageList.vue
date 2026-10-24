@@ -56,7 +56,7 @@ function commitEdit(message) {
   send({ content: text, editId: message.id })
 }
 
-watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}`).join('\n'), () => scrollIfNeeded())
+watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}|${(item.tools || []).length}`).join('\n'), () => scrollIfNeeded())
 onMounted(() => scrollIfNeeded(true))
 </script>
 
@@ -77,6 +77,12 @@ onMounted(() => scrollIfNeeded(true))
         <textarea v-if="editingId === String(message.id)" v-model="editingText" class="edit-box" rows="3" />
         <div v-else-if="message.role === 'user'" class="user-bubble">{{ message.content }}</div>
         <template v-else>
+          <div v-if="message.tools?.length" class="tool-list">
+            <details v-for="(tool, index) in message.tools" :key="`${message.id}-tool-${index}`" class="tool-trace" open>
+              <summary>{{ tool.ok ? '已调用' : '调用失败' }} {{ tool.name }}</summary>
+              <pre>{{ tool.result }}</pre>
+            </details>
+          </div>
           <ChartPanel v-if="message.chart" :chart="message.chart" />
           <div v-if="message.content" class="markdown" v-html="html(message)" />
         </template>

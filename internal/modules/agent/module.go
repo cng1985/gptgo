@@ -9,7 +9,9 @@ import (
 var Module = fx.Module(
 	"agent",
 	fx.Provide(NewRepository),
-	fx.Provide(NewResource),
+	fx.Provide(func(repo *Repository, servers ServerChecker) *Resource {
+		return NewResource(repo, servers)
+	}),
 	fx.Provide(NewController),
 	fx.Provide(fx.Annotate(
 		func(controller *Controller) routing.Registrar { return controller },

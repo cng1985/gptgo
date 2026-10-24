@@ -11,8 +11,8 @@ import (
 var Module = fx.Module(
 	"chat",
 	fx.Provide(NewRepository),
-	fx.Provide(func(repo *Repository, agents AgentSource, models *aiplat.Router, cfg *config.Config) *Resource {
-		return NewResource(repo, agents, models, cfg.AI.DefaultModel)
+	fx.Provide(func(repo *Repository, agents AgentSource, models *aiplat.Router, tools ToolSource, cfg *config.Config) *Resource {
+		return NewResource(repo, agents, models, tools, cfg.AI.DefaultModel)
 	}),
 	fx.Provide(func(resource *Resource, models *aiplat.Router) *Controller {
 		return NewController(resource, models)

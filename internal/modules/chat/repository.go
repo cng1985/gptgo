@@ -267,6 +267,7 @@ func (r *Repository) Complete(ctx context.Context, request *ChatCompleteRequest)
 				"content":    request.Content,
 				"thinking":   request.Thinking,
 				"chart":      request.Chart,
+				"tools":      request.Tools,
 				"status":     request.Status,
 				"updated_at": time.Now().UTC(),
 			})

@@ -87,22 +87,37 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer) {
 	for _, turn := range data.Messages {
 		turns = append(turns, aiplat.Message{Role: turn.Role, Content: turn.Content})
 	}
-	chunks, err := models.Stream(streamCtx, aiplat.Request{
-		Model:        data.Model,
-		Messages:     turns,
-		ThinkingMode: data.ThinkingMode,
-		SearchNotes:  data.SearchNotes,
-		AgentName:    data.AgentName,
-		Instructions: data.Instructions,
-	})
-	if err != nil {
-		status = "error"
-		write("error", map[string]string{"msg": "模型暂时无法回答，请稍后再试"})
-	} else {
+	var tools []aiplat.Tool
+	if data.AgentID > 0 && resource.tools != nil {
+		listed, listErr := resource.tools.ForAgent(streamCtx, data.AgentID)
+		if listErr == nil {
+			tools = listed
+		}
+	}
+	traces := make([]ToolTrace, 0)
+	for round := 0; round < 3; round++ {
+		var roundText strings.Builder
+		var calls []aiplat.ToolCall
+		chunks, err := models.Stream(streamCtx, aiplat.Request{
+			Model:        data.Model,
+			Messages:     turns,
+			ThinkingMode: data.ThinkingMode,
+			SearchNotes:  data.SearchNotes,
+			AgentName:    data.AgentName,
+			Instructions: data.Instructions,
+			Tools:        tools,
+		})
+		if err != nil {
+			status = "error"
+			write("error", map[string]string{"msg": "模型暂时无法回答，请稍后再试"})
+			break
+		}
+		failed := false
 		for delta := range chunks {
 			if delta.Err != nil {
 				status = "error"
 				write("error", map[string]string{"msg": "模型暂时无法回答，请稍后再试"})
+				failed = true
 				break
 			}
 			if delta.Thinking != "" {
@@ -111,19 +126,54 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer) {
 			}
 			if delta.Content != "" {
 				content.WriteString(delta.Content)
+				roundText.WriteString(delta.Content)
 				write("delta", map[string]string{"delta": delta.Content})
+			}
+			if len(delta.ToolCalls) > 0 {
+				calls = append(calls, delta.ToolCalls...)
 			}
 			if streamCtx.Err() != nil {
 				status = "stopped"
+				failed = true
 				break
 			}
 		}
 		if errors.Is(streamCtx.Err(), context.Canceled) || errors.Is(streamCtx.Err(), context.DeadlineExceeded) {
 			status = "stopped"
+			failed = true
+		}
+		if failed || len(calls) == 0 || resource.tools == nil {
+			break
+		}
+		if len(calls) > 3 {
+			calls = calls[:3]
+		}
+		turns = append(turns, aiplat.Message{Role: "assistant", Content: roundText.String(), ToolCalls: calls})
+		for _, call := range calls {
+			result, ok := runTool(streamCtx, resource, tools, call)
+			trace := ToolTrace{
+				Name:      call.Name,
+				Arguments: clipRunes(call.Arguments, 2000),
+				Result:    clipRunes(result, 4000),
+				OK:        ok,
+			}
+			traces = append(traces, trace)
+			write("tool", trace)
+			turns = append(turns, aiplat.Message{
+				Role:       "tool",
+				ToolCallID: call.ID,
+				Content:    clipRunes(result, 8000),
+			})
 		}
 	}
 	if status == "error" && content.Len() == 0 {
 		content.WriteString("这次没有生成完整回答。请再试一次。")
+	}
+	toolsJSON := ""
+	if len(traces) > 0 {
+		if raw, err := json.Marshal(traces); err == nil && len(raw) <= 20000 {
+			toolsJSON = string(raw)
+		}
 	}
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
 	defer cancel()
@@ -137,6 +187,7 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer) {
 		AssistantMessageID: data.AssistantMessageID,
 		Content:            content.String(),
 		Thinking:           thinking.String(),
+		Tools:              toolsJSON,
 		Status:             status,
 	})
 	if status == "done" {
@@ -156,4 +207,27 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer) {
 
 func formatID(id int64) string {
 	return fmt.Sprintf("%d", id)
+}
+
+func runTool(ctx context.Context, resource *Resource, tools []aiplat.Tool, call aiplat.ToolCall) (string, bool) {
+	var matched aiplat.Tool
+	found := false
+	for _, tool := range tools {
+		if tool.Name == call.Name {
+			matched = tool
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "未知工具", false
+	}
+	result, err := resource.tools.Call(ctx, matched, call.Arguments)
+	if err != nil {
+		if strings.TrimSpace(result) == "" {
+			return "工具调用失败", false
+		}
+		return result, false
+	}
+	return result, true
 }

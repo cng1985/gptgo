@@ -67,6 +67,13 @@ type MessageSearch struct {
 	PageSize       int   `json:"page_size"`
 }
 
+type ToolTrace struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+	Result    string `json:"result"`
+	OK        bool   `json:"ok"`
+}
+
 type MessageSimple struct {
 	ID             int64              `json:"id,string"`
 	ConversationID int64              `json:"conversation_id,string"`
@@ -74,6 +81,7 @@ type MessageSimple struct {
 	Content        string             `json:"content"`
 	Thinking       string             `json:"thinking"`
 	Chart          json.RawMessage    `json:"chart,omitempty"`
+	Tools          []ToolTrace        `json:"tools,omitempty"`
 	Status         string             `json:"status"`
 	Attachments    []AttachmentSimple `json:"attachments"`
 	CreatedAt      time.Time          `json:"created_at"`
@@ -129,6 +137,7 @@ type ChatCompleteRequest struct {
 	Content            string `json:"content"`
 	Thinking           string `json:"thinking"`
 	Chart              string `json:"chart,omitempty"`
+	Tools              string `json:"tools,omitempty"`
 	Status             string `json:"status"`
 }
 

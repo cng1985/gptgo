@@ -44,10 +44,23 @@ func MessageEntityToSimple(entity *Message, attachments []Attachment) *MessageSi
 		Content:        entity.Content,
 		Thinking:       entity.Thinking,
 		Chart:          chartPayload(entity.Chart),
+		Tools:          toolsPayload(entity.Tools),
 		Status:         entity.Status,
 		Attachments:    items,
 		CreatedAt:      entity.CreatedAt,
 	}
+}
+
+func toolsPayload(raw string) []ToolTrace {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || !json.Valid([]byte(raw)) {
+		return nil
+	}
+	var items []ToolTrace
+	if err := json.Unmarshal([]byte(raw), &items); err != nil || len(items) == 0 {
+		return nil
+	}
+	return items
 }
 
 func chartPayload(raw string) json.RawMessage {
