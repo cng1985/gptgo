@@ -55,6 +55,10 @@ func (b *Builtin) Optimize(_ context.Context, content, _ string) (string, error)
 	return optimizeText(content), nil
 }
 
+func (b *Builtin) Author(_ context.Context, prompt, model string) (string, error) {
+	return BuiltinDraft(prompt, model), nil
+}
+
 func lastUser(messages []Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" && strings.TrimSpace(messages[i].Content) != "" {

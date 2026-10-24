@@ -382,6 +382,9 @@ button:disabled { cursor: default; }
   font-size: 14px;
   color: var(--text);
 }
+.draft-box { margin-bottom: 14px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.draft-box .field textarea { min-height: 72px; }
+.opt-chip:disabled { opacity: 0.55; }
 .agent-layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
 .agent-layout .field input + input { margin-top: 8px; }
 .history-row.selected { background: var(--hover); }
