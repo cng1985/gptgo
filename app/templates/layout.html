@@ -1,0 +1,51 @@
+{{define "open"}}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#16130f">
+<title>{{.Title}} · GPTGO</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,640&amp;family=Outfit:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到内容</a>
+<div class="shell">
+{{template "panel" .}}
+<main id="main" class="stage">
+{{end}}
+
+{{define "panel"}}
+<aside class="panel">
+  <div class="panel-top">
+    <a class="mark" href="/">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#f3eee6"/>
+        <rect x="8" y="8" width="7" height="16" rx="1.5" fill="#16130f"/>
+        <rect x="17" y="8" width="7" height="7" rx="1.5" fill="#e25a2a"/>
+      </svg>
+      <span>GPTGO</span>
+    </a>
+    <p class="panel-kicker">对话工作台</p>
+    <h2>自己的服务，<br>自己的账号。</h2>
+  </div>
+  <ol class="features">
+    <li><span>01</span>账号存在本地数据库</li>
+    <li><span>02</span>密码只以哈希保存</li>
+    <li><span>03</span>注册完成即可进入</li>
+  </ol>
+  <p class="panel-foot">会话留在这台机器上</p>
+</aside>
+{{end}}
+
+{{define "close"}}
+</main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
+{{end}}

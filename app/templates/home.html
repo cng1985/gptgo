@@ -1,0 +1,24 @@
+{{define "home"}}
+{{template "open" .}}
+<div class="form-wrap wide">
+  <p class="eyebrow">工作台</p>
+  <h1>你好，{{.User.Name}}</h1>
+  <p class="lede">这个账号已经登录。后续的对话可以从这里开始。</p>
+  {{if .Error}}<div class="alert" role="alert">{{.Error}}</div>{{end}}
+  <dl class="account">
+    <div>
+      <dt>邮箱</dt>
+      <dd>{{.User.Email}}</dd>
+    </div>
+    <div>
+      <dt>注册时间</dt>
+      <dd>{{zhDate .User.CreatedAt}}</dd>
+    </div>
+  </dl>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button class="btn btn-ghost" type="submit">退出登录</button>
+  </form>
+</div>
+{{template "close" .}}
+{{end}}

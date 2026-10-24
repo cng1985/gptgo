@@ -1,0 +1,29 @@
+{{define "login"}}
+{{template "open" .}}
+<div class="form-wrap">
+  <p class="eyebrow">账号</p>
+  <h1>登录</h1>
+  <p class="lede">回到你的工作台。</p>
+  {{if .Error}}<div class="alert" role="alert">{{.Error}}</div>{{end}}
+  <form method="post" action="/login" data-auth novalidate>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <div class="field">
+      <label for="email">邮箱</label>
+      <input id="email" name="email" type="email" inputmode="email" autocomplete="username" spellcheck="false" value="{{.Email}}"{{if index .FieldErrors "email"}} aria-invalid="true" aria-describedby="email-error"{{end}}>
+      {{with index .FieldErrors "email"}}<p class="field-error" id="email-error">{{.}}</p>{{end}}
+    </div>
+    <div class="field">
+      <div class="label-row">
+        <label for="password">密码</label>
+        <button type="button" class="text-btn" data-toggle-password="password" aria-controls="password" aria-pressed="false">显示</button>
+      </div>
+      <input id="password" name="password" type="password" autocomplete="current-password"{{if index .FieldErrors "password"}} aria-invalid="true" aria-describedby="password-error"{{end}}>
+      {{with index .FieldErrors "password"}}<p class="field-error" id="password-error">{{.}}</p>{{end}}
+    </div>
+    <button class="btn btn-primary" type="submit">进入工作台</button>
+    <p class="hint">登录状态会在这台浏览器保留 7 天。</p>
+  </form>
+  <p class="switch">还没有账号？<a href="/register">注册</a></p>
+</div>
+{{template "close" .}}
+{{end}}

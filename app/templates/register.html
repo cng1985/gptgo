@@ -1,0 +1,41 @@
+{{define "register"}}
+{{template "open" .}}
+<div class="form-wrap">
+  <p class="eyebrow">新账号</p>
+  <h1>注册</h1>
+  <p class="lede">填一次，就可以进工作台。</p>
+  {{if .Error}}<div class="alert" role="alert">{{.Error}}</div>{{end}}
+  <form method="post" action="/register" data-auth novalidate>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <div class="field">
+      <label for="name">昵称</label>
+      <input id="name" name="name" type="text" autocomplete="nickname" maxlength="32" value="{{.Name}}"{{if index .FieldErrors "name"}} aria-invalid="true" aria-describedby="name-error"{{end}}>
+      {{with index .FieldErrors "name"}}<p class="field-error" id="name-error">{{.}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="email">邮箱</label>
+      <input id="email" name="email" type="email" inputmode="email" autocomplete="email" spellcheck="false" value="{{.Email}}"{{if index .FieldErrors "email"}} aria-invalid="true" aria-describedby="email-error"{{end}}>
+      {{with index .FieldErrors "email"}}<p class="field-error" id="email-error">{{.}}</p>{{end}}
+    </div>
+    <div class="field">
+      <div class="label-row">
+        <label for="password">密码</label>
+        <button type="button" class="text-btn" data-toggle-password="password" aria-controls="password" aria-pressed="false">显示</button>
+      </div>
+      <input id="password" name="password" type="password" autocomplete="new-password"{{if index .FieldErrors "password"}} aria-invalid="true" aria-describedby="password-error"{{end}}>
+      {{with index .FieldErrors "password"}}<p class="field-error" id="password-error">{{.}}</p>{{else}}<p class="hint">至少 8 位。我们只保存哈希。</p>{{end}}
+    </div>
+    <div class="field">
+      <div class="label-row">
+        <label for="confirm">确认密码</label>
+        <button type="button" class="text-btn" data-toggle-password="confirm" aria-controls="confirm" aria-pressed="false">显示</button>
+      </div>
+      <input id="confirm" name="confirm" type="password" autocomplete="new-password"{{if index .FieldErrors "confirm"}} aria-invalid="true" aria-describedby="confirm-error"{{end}}>
+      <p class="field-error" id="confirm-error"{{if not (index .FieldErrors "confirm")}} hidden{{end}}>{{index .FieldErrors "confirm"}}</p>
+    </div>
+    <button class="btn btn-primary" type="submit">创建账号</button>
+  </form>
+  <p class="switch">已有账号？<a href="/login">登录</a></p>
+</div>
+{{template "close" .}}
+{{end}}
