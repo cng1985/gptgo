@@ -21,6 +21,7 @@ type Message struct {
 	Role           string
 	Content        string
 	Thinking       string
+	Chart          string
 	Status         string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time

@@ -1,6 +1,9 @@
 package chat
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 func ConversationEntityToSimple(entity *Conversation) *ConversationSimple {
 	return &ConversationSimple{
@@ -38,10 +41,19 @@ func MessageEntityToSimple(entity *Message, attachments []Attachment) *MessageSi
 		Role:           entity.Role,
 		Content:        entity.Content,
 		Thinking:       entity.Thinking,
+		Chart:          chartPayload(entity.Chart),
 		Status:         entity.Status,
 		Attachments:    items,
 		CreatedAt:      entity.CreatedAt,
 	}
+}
+
+func chartPayload(raw string) json.RawMessage {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || !json.Valid([]byte(raw)) {
+		return nil
+	}
+	return json.RawMessage(raw)
 }
 
 func titleFrom(content string) string {

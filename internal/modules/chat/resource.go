@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -214,7 +215,23 @@ func (r *Resource) Complete(ctx context.Context, request *ChatCompleteRequest) (
 	}
 	request.Content = clipRunes(request.Content, 100000)
 	request.Thinking = clipRunes(request.Thinking, 20000)
+	request.Chart = strings.TrimSpace(request.Chart)
+	if request.Chart != "" && (!json.Valid([]byte(request.Chart)) || len(request.Chart) > 500000) {
+		request.Chart = ""
+	}
 	return r.repo.Complete(ctx, request)
+}
+
+func (r *Resource) Ask(ctx context.Context, question, mode string) (AskOutcome, bool, error) {
+	if err := requireActor(ctx); err != nil {
+		return AskOutcome{}, false, err
+	}
+	switch mode {
+	case "", "off", "light", "deep":
+	default:
+		mode = "off"
+	}
+	return r.repo.Ask(ctx, strings.TrimSpace(question), mode)
 }
 
 func (r *Resource) Optimize(ctx context.Context, request *ChatOptimizeRequest) (response.Response[ChatOptimizeResponse], error) {

@@ -79,45 +79,71 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer) {
 		"title":                data.Title,
 	})
 
-	turns := make([]aiplat.Message, 0, len(data.Messages))
-	for _, turn := range data.Messages {
-		turns = append(turns, aiplat.Message{Role: turn.Role, Content: turn.Content})
-	}
 	streamCtx := c.Request.Context()
-	chunks, err := models.Stream(streamCtx, aiplat.Request{
-		Model:        data.Model,
-		Messages:     turns,
-		ThinkingMode: data.ThinkingMode,
-		SearchNotes:  data.SearchNotes,
-	})
 	var content strings.Builder
 	var thinking strings.Builder
 	status := "done"
-	if err != nil {
+	chartJSON := ""
+	outcome, asked, askErr := resource.Ask(streamCtx, lastQuestion(data.Messages), data.ThinkingMode)
+	switch {
+	case errors.Is(askErr, context.Canceled) || errors.Is(askErr, context.DeadlineExceeded):
+		status = "stopped"
+	case asked && askErr != nil:
 		status = "error"
-		write("error", map[string]string{"msg": "模型暂时无法回答，请稍后再试"})
-	} else {
-		for delta := range chunks {
-			if delta.Err != nil {
-				status = "error"
-				write("error", map[string]string{"msg": "模型暂时无法回答，请稍后再试"})
-				break
-			}
-			if delta.Thinking != "" {
-				thinking.WriteString(delta.Thinking)
-				write("thinking", map[string]string{"delta": delta.Thinking})
-			}
-			if delta.Content != "" {
-				content.WriteString(delta.Content)
-				write("delta", map[string]string{"delta": delta.Content})
-			}
-			if streamCtx.Err() != nil {
-				status = "stopped"
-				break
+		write("error", map[string]string{"msg": "问数暂时无法完成，请稍后再试"})
+	case asked:
+		if outcome.Thinking != "" {
+			thinking.WriteString(outcome.Thinking)
+			writeText(streamCtx, write, "thinking", outcome.Thinking)
+		}
+		if outcome.Chart != nil {
+			write("chart", outcome.Chart)
+			if raw, err := json.Marshal(outcome.Chart); err == nil {
+				chartJSON = string(raw)
 			}
 		}
-		if errors.Is(streamCtx.Err(), context.Canceled) || errors.Is(streamCtx.Err(), context.DeadlineExceeded) {
+		content.WriteString(outcome.Answer)
+		writeText(streamCtx, write, "delta", outcome.Answer)
+		if streamCtx.Err() != nil {
 			status = "stopped"
+		}
+	default:
+		turns := make([]aiplat.Message, 0, len(data.Messages))
+		for _, turn := range data.Messages {
+			turns = append(turns, aiplat.Message{Role: turn.Role, Content: turn.Content})
+		}
+		chunks, err := models.Stream(streamCtx, aiplat.Request{
+			Model:        data.Model,
+			Messages:     turns,
+			ThinkingMode: data.ThinkingMode,
+			SearchNotes:  data.SearchNotes,
+		})
+		if err != nil {
+			status = "error"
+			write("error", map[string]string{"msg": "模型暂时无法回答，请稍后再试"})
+		} else {
+			for delta := range chunks {
+				if delta.Err != nil {
+					status = "error"
+					write("error", map[string]string{"msg": "模型暂时无法回答，请稍后再试"})
+					break
+				}
+				if delta.Thinking != "" {
+					thinking.WriteString(delta.Thinking)
+					write("thinking", map[string]string{"delta": delta.Thinking})
+				}
+				if delta.Content != "" {
+					content.WriteString(delta.Content)
+					write("delta", map[string]string{"delta": delta.Content})
+				}
+				if streamCtx.Err() != nil {
+					status = "stopped"
+					break
+				}
+			}
+			if errors.Is(streamCtx.Err(), context.Canceled) || errors.Is(streamCtx.Err(), context.DeadlineExceeded) {
+				status = "stopped"
+			}
 		}
 	}
 	if status == "error" && content.Len() == 0 {
@@ -135,6 +161,7 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer) {
 		AssistantMessageID: data.AssistantMessageID,
 		Content:            content.String(),
 		Thinking:           thinking.String(),
+		Chart:              chartJSON,
 		Status:             status,
 	})
 	if status == "done" {
@@ -154,4 +181,32 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer) {
 
 func formatID(id int64) string {
 	return fmt.Sprintf("%d", id)
+}
+
+func lastQuestion(messages []ModelTurn) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "user" {
+			continue
+		}
+		text := messages[i].Content
+		if idx := strings.Index(text, "\n\n【附件 "); idx >= 0 {
+			text = text[:idx]
+		}
+		return strings.TrimSpace(text)
+	}
+	return ""
+}
+
+func writeText(ctx context.Context, write func(string, any), event, text string) {
+	runes := []rune(text)
+	for i := 0; i < len(runes); i += 32 {
+		if ctx.Err() != nil {
+			return
+		}
+		end := i + 32
+		if end > len(runes) {
+			end = len(runes)
+		}
+		write(event, map[string]string{"delta": string(runes[i:end])})
+	}
 }
