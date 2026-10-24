@@ -233,6 +233,10 @@ func (r *Resource) Complete(ctx context.Context, request *ChatCompleteRequest) (
 	if request.Tools != "" && (!json.Valid([]byte(request.Tools)) || len(request.Tools) > 100000) {
 		request.Tools = ""
 	}
+	request.Sources = strings.TrimSpace(request.Sources)
+	if request.Sources != "" && (!json.Valid([]byte(request.Sources)) || len(request.Sources) > 20000) {
+		request.Sources = ""
+	}
 	return r.repo.Complete(ctx, request)
 }
 

@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { findAgent } from '../stores/agent'
-import { addFiles, chat, optimizeDraft, removeAttachment, send, stop } from '../stores/chat'
+import { addFiles, chat, optimizeDraft, removeAttachment, send, stop, toggleWebSearch } from '../stores/chat'
 
 const box = ref(null)
 const fileRef = ref(null)
@@ -99,6 +99,17 @@ function toggleMic() {
         <div class="composer-left">
           <button class="circle-tool" type="button" aria-label="添加文件" @click="pickFiles">
             <Icon name="paperclip" :size="16" />
+          </button>
+          <button
+            class="tool-chip"
+            :class="{ on: chat.webSearch }"
+            type="button"
+            :aria-pressed="chat.webSearch"
+            :title="chat.webSearch ? '已开启联网，发送时会检索公开网页' : '联网搜索'"
+            @click="toggleWebSearch"
+          >
+            <Icon name="globe" :size="15" />
+            联网
           </button>
           <button class="opt-chip" type="button" :disabled="chat.optimizing" @click="optimizeDraft">
             <Icon name="spark" :size="15" />

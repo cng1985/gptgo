@@ -268,6 +268,7 @@ func (r *Repository) Complete(ctx context.Context, request *ChatCompleteRequest)
 				"thinking":   request.Thinking,
 				"chart":      request.Chart,
 				"tools":      request.Tools,
+				"sources":    request.Sources,
 				"status":     request.Status,
 				"updated_at": time.Now().UTC(),
 			})
@@ -370,7 +371,7 @@ func prepareRegenerate(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*C
 		return nil, 0, 0, err
 	}
 	res := tx.Model(&Message{}).Where("id = ?", assistant.ID).Updates(map[string]any{
-		"content": "", "thinking": "", "chart": "", "tools": "", "status": "streaming", "updated_at": now,
+		"content": "", "thinking": "", "chart": "", "tools": "", "sources": "", "status": "streaming", "updated_at": now,
 	})
 	if res.Error != nil {
 		return nil, 0, 0, res.Error

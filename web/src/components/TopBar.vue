@@ -38,7 +38,14 @@ function downloadChat() {
   }
   const lines = [`# ${activeTitle()}`, '']
   for (const message of chat.messages) {
-    lines.push(message.role === 'user' ? '## 你' : '## ChatBI AI', '', message.content || '', '')
+    lines.push(message.role === 'user' ? '## 你' : '## ChatBI AI', '', message.content || '')
+    if (message.role === 'assistant' && message.sources?.length) {
+      lines.push('', '来源：')
+      for (const source of message.sources) {
+        lines.push(`- ${source.title || source.url} ${source.url || ''}`.trim())
+      }
+    }
+    lines.push('')
   }
   const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
   const link = document.createElement('a')
@@ -135,6 +142,7 @@ onUnmounted(() => {
         <div v-if="settingsOpen" class="menu settings-menu">
           <p><strong>模型来源</strong></p>
           <p class="muted">{{ chat.account.provider_ready ? '已连接外部模型接口' : '当前使用内置助手。配置 APP_AI_API_KEY 后可接入 OpenAI 兼容接口。' }}</p>
+          <p class="muted">打开输入框里的「联网」后，问题会发给检索服务。默认是 DuckDuckGo 和中文维基百科。</p>
           <p><strong>快捷键</strong></p>
           <p class="muted">Ctrl K 新建对话。Enter 发送，Shift + Enter 换行。</p>
           <button v-if="!confirmClear" type="button" class="danger" @click="confirmClear = true">清空所有对话</button>

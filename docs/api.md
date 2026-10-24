@@ -53,6 +53,6 @@
 | `GET /health/live` | 存活 |
 | `GET /health/ready` | 数据库可访问 |
 
-流式事件为 `meta`、`thinking`、`tool`、`delta`、`done`、`error`。`tool` 事件带上工具名、参数、状态和结果。助手消息的 `tools` 字段保存这一轮调用。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。
+流式事件为 `meta`、`search`、`thinking`、`tool`、`delta`、`done`、`error`。请求带 `web_search: true` 时先发 `search`。它的 `status` 是 `running`、`done`、`empty` 或 `error`，完成时带 `sources`。助手消息的 `sources` 保存标题、链接和摘要。`tool` 事件带上工具名、参数、状态和结果。助手消息的 `tools` 字段保存这一轮调用。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。对话详情里的 `web_search` 记住输入框上的联网开关。
 
 `POST /api/ask` 读取当前 SQLite 里的每一张业务表，而不是一份写死的表白名单。命中问数时，`data.chart` 带上图表类型、列、行，以及本次读到的全部表。图表类型可以是 `bar`、`line`、`pie`、`metric` 或 `table`。`data.answer` 是结论文字。密码哈希和登录令牌只显示为「已隐藏」。问数只执行单条只读 `SELECT`。没有识别成问数时 `matched` 为 false，不会查询。

@@ -20,6 +20,9 @@ var allowed = map[string]map[string]struct{}{
 	"ai": {
 		"provider": {}, "base_url": {}, "api_key": {}, "default_model": {}, "upstream_model": {}, "request_timeout": {},
 	},
+	"search": {
+		"provider": {}, "api_key": {}, "timeout": {},
+	},
 }
 
 var allowedSQLite = map[string]struct{}{

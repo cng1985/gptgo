@@ -56,7 +56,17 @@ function commitEdit(message) {
   send({ content: text, editId: message.id })
 }
 
-watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}|${(item.tools || []).map((tool) => `${tool.id}:${tool.status}:${tool.result || ''}`).join(',')}`).join('\n'), () => scrollIfNeeded())
+function safeLink(url) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.href
+  } catch {
+    return ''
+  }
+  return ''
+}
+
+watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.searchStatus || ''}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}|${(item.sources || []).length}|${(item.tools || []).map((tool) => `${tool.id}:${tool.status}:${tool.result || ''}`).join(',')}`).join('\n'), () => scrollIfNeeded())
 onMounted(() => scrollIfNeeded(true))
 </script>
 
@@ -71,6 +81,16 @@ onMounted(() => scrollIfNeeded(true))
             <p v-if="tool.arguments" class="tool-args">{{ tool.arguments }}</p>
             <p v-if="tool.result">{{ tool.result }}</p>
           </details>
+        </div>
+        <div v-if="message.role === 'assistant' && (message.searchStatus || message.sources?.length)" class="search-sources">
+          <span v-if="message.searchStatus === 'running'" class="search-state">正在联网检索</span>
+          <span v-else-if="message.searchStatus === 'empty' || message.searchStatus === 'error'" class="search-state">这次没有检索到可用的公开结果。</span>
+          <template v-else>
+            <template v-for="(item, index) in message.sources" :key="item.url || index">
+              <a v-if="safeLink(item.url)" :href="safeLink(item.url)" target="_blank" rel="noopener noreferrer" :title="item.snippet || item.url">{{ item.title || item.url }}</a>
+              <span v-else>{{ item.title || '来源' }}</span>
+            </template>
+          </template>
         </div>
         <div v-if="message.role === 'assistant' && message.thinking" class="thinking">
           <details :open="message.status === 'streaming'">
