@@ -71,6 +71,10 @@ export function askQuestion(body) {
   })
 }
 
+export function askCatalog(question, thinkingMode) {
+  return post('/api/ask', { question, thinking_mode: thinkingMode || 'off' })
+}
+
 export function searchBilling(page = 1) {
   return post('/api/billing/search', { page, page_size: 20 })
 }

@@ -3,7 +3,6 @@ package chat
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -13,8 +12,8 @@ import (
 	"gptgo/internal/platform/response"
 )
 
-type WebSearch interface {
-	Search(ctx context.Context, query string) (string, error)
+type AgentSource interface {
+	Prompt(ctx context.Context, id int64) (string, string, error)
 }
 
 type Optimizer interface {
@@ -23,16 +22,16 @@ type Optimizer interface {
 
 type Resource struct {
 	repo         *Repository
-	search       WebSearch
+	agents       AgentSource
 	optimizer    Optimizer
 	defaultModel string
 }
 
-func NewResource(repo *Repository, search WebSearch, optimizer Optimizer, defaultModel string) *Resource {
+func NewResource(repo *Repository, agents AgentSource, optimizer Optimizer, defaultModel string) *Resource {
 	if strings.TrimSpace(defaultModel) == "" {
 		defaultModel = "minimax-m3.1-flash"
 	}
-	return &Resource{repo: repo, search: search, optimizer: optimizer, defaultModel: defaultModel}
+	return &Resource{repo: repo, agents: agents, optimizer: optimizer, defaultModel: defaultModel}
 }
 
 func (r *Resource) Create(ctx context.Context, request *ConversationRequest) (response.Response[ConversationResponse], error) {
@@ -184,17 +183,28 @@ func (r *Resource) Prepare(ctx context.Context, request *ChatStreamRequest) (res
 	if err := validateAttachments(request.Attachments); err != nil {
 		return zero, err
 	}
+	creating := request.ConversationID == 0 && request.RegenerateMessageID == 0 && request.EditMessageID == 0
+	if creating && request.AgentID > 0 {
+		if r.agents == nil {
+			return zero, apperr.Invalid("智能体不可用")
+		}
+		if _, _, err := r.agents.Prompt(ctx, request.AgentID); err != nil {
+			return zero, err
+		}
+	}
 	result, err := r.repo.Prepare(ctx, request)
 	if err != nil {
 		return zero, err
 	}
-	if request.WebSearch {
-		query := lastTurn(result.Data.Messages)
-		notes, searchErr := r.search.Search(ctx, clipRunes(query, 180))
-		if searchErr != nil {
-			slog.Default().Warn("web search skipped", "err", searchErr.Error())
+	if result.Data.AgentID > 0 && r.agents != nil {
+		name, instructions, promptErr := r.agents.Prompt(ctx, result.Data.AgentID)
+		if promptErr != nil {
+			if appErr, ok := apperr.As(promptErr); !ok || appErr.Cat != apperr.CategoryNotFound {
+				return zero, promptErr
+			}
 		} else {
-			result.Data.SearchNotes = clipRunes(strings.TrimSpace(notes), 2000)
+			result.Data.AgentName = name
+			result.Data.Instructions = instructions
 		}
 	}
 	return result, nil
@@ -220,6 +230,44 @@ func (r *Resource) Complete(ctx context.Context, request *ChatCompleteRequest) (
 		request.Chart = ""
 	}
 	return r.repo.Complete(ctx, request)
+}
+
+func (r *Resource) AskOnce(ctx context.Context, request *AskRequest) (response.Response[AskResponse], error) {
+	var zero response.Response[AskResponse]
+	if err := requireActor(ctx); err != nil {
+		return zero, err
+	}
+	if request == nil {
+		return zero, apperr.Invalid("参数格式错误")
+	}
+	request.Question = strings.TrimSpace(request.Question)
+	if request.Question == "" {
+		return zero, apperr.Invalid("问题不能为空")
+	}
+	if len([]rune(request.Question)) > 1000 {
+		return zero, apperr.Invalid("问题过长")
+	}
+	switch request.ThinkingMode {
+	case "", "off", "light", "deep":
+	default:
+		return zero, apperr.Invalid("不支持的思考模式")
+	}
+	outcome, matched, err := r.Ask(ctx, request.Question, request.ThinkingMode)
+	if err != nil {
+		return zero, apperr.Unavailable("问数暂时无法完成")
+	}
+	if !matched {
+		return response.OK(AskResponse{
+			Matched: false,
+			Answer:  "没有识别成问数。可以问某张表的条数、字段，或让系统把全部数据表画成图表。",
+		}), nil
+	}
+	return response.OK(AskResponse{
+		Matched:  true,
+		Thinking: outcome.Thinking,
+		Answer:   outcome.Answer,
+		Chart:    outcome.Chart,
+	}), nil
 }
 
 func (r *Resource) Ask(ctx context.Context, question, mode string) (AskOutcome, bool, error) {
@@ -311,15 +359,6 @@ func validateAttachments(items []AttachmentInput) error {
 		items[i].Name = name
 	}
 	return nil
-}
-
-func lastTurn(messages []ModelTurn) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" {
-			return messages[i].Content
-		}
-	}
-	return ""
 }
 
 func clipRunes(text string, max int) string {

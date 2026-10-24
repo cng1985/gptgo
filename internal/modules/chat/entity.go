@@ -9,6 +9,7 @@ type Conversation struct {
 	Model        string
 	ThinkingMode string
 	WebSearch    bool
+	AgentID      int64
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

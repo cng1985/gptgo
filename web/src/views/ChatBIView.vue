@@ -1,9 +1,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import ChartPanel from '../components/ChartPanel.vue'
 import PageHead from '../components/PageHead.vue'
-import { models, notify } from '../stores/chat'
-import { askQuestion, chatbi, loadSchema, refreshBalance, refreshSources, searchUsage } from '../stores/chatbi'
+import { chat, models, notify } from '../stores/chat'
+import { askCatalog, askQuestion, chatbi, loadSchema, refreshBalance, refreshSources, searchUsage } from '../stores/chatbi'
+import { renderMarkdown } from '../utils/markdown'
 import { formatDateTime } from '../utils/time'
 
 const router = useRouter()
@@ -15,6 +17,16 @@ const result = ref(null)
 const errorText = ref('')
 const tables = ref([])
 const history = ref([])
+const catalogQuestion = ref('读取系统全部数据表，并用图表展示')
+const catalogAsking = ref(false)
+const catalogResult = ref(null)
+const catalogError = ref('')
+const catalogIdeas = [
+  '读取系统全部数据表，并用图表展示',
+  '对话按模型画饼图',
+  'account 有哪些字段',
+]
+const catalogHtml = computed(() => renderMarkdown(catalogResult.value?.answer || ''))
 
 const source = computed(() => chatbi.sources.find((item) => String(item.id) === String(datasourceId.value)))
 const suggestions = computed(() => {
@@ -90,6 +102,21 @@ async function loadTables() {
   }
 }
 
+async function submitCatalog() {
+  const text = catalogQuestion.value.trim()
+  if (!text || catalogAsking.value) return
+  catalogAsking.value = true
+  catalogError.value = ''
+  try {
+    const response = await askCatalog(text, chat.thinking)
+    catalogResult.value = response.data
+  } catch (error) {
+    catalogError.value = error.message || '问数失败'
+  } finally {
+    catalogAsking.value = false
+  }
+}
+
 async function submit() {
   const text = question.value.trim()
   if (!datasourceId.value) {
@@ -141,12 +168,35 @@ onMounted(boot)
 
 <template>
   <div class="panel-page">
-    <PageHead title="ChatBI 问数" />
+    <PageHead title="问数" />
     <div class="panel-body">
       <header class="panel-intro">
-        <h1>用一句话查询你的数据库</h1>
-        <p>只生成并执行单条只读 SQL。每个账号只能使用自己保存的数据源。没有模型密钥时选「内置助手」，它会按表结构生成查询。</p>
+        <h1>问数</h1>
+        <p>本库问数读取当前应用里的全部数据表并生成图表。外部数据库在下面单独查询，只执行单条只读 SQL。</p>
       </header>
+      <section class="panel-card catalog-ask">
+        <h2>本库</h2>
+        <p>问表、字段、数量或图表。密码哈希和登录令牌只显示为已隐藏。</p>
+        <form class="ask-box" @submit.prevent="submitCatalog">
+          <textarea v-model="catalogQuestion" rows="3" maxlength="1000" placeholder="例如：读取系统全部数据表，并用图表展示" />
+          <div class="ask-actions">
+            <span>只读查询</span>
+            <button class="primary" type="submit" :disabled="catalogAsking">{{ catalogAsking ? '查询中' : '问数' }}</button>
+          </div>
+        </form>
+        <div class="chips">
+          <button v-for="item in catalogIdeas" :key="item" type="button" @click="catalogQuestion = item">{{ item }}</button>
+        </div>
+        <p v-if="catalogError" class="auth-error">{{ catalogError }}</p>
+        <template v-if="catalogResult">
+          <p v-if="!catalogResult.matched" class="result-summary">{{ catalogResult.answer }}</p>
+          <template v-else>
+            <ChartPanel v-if="catalogResult.chart" :chart="catalogResult.chart" />
+            <div v-if="catalogResult.answer" class="markdown" v-html="catalogHtml" />
+          </template>
+        </template>
+      </section>
+      <h2 class="section-title">外部数据源</h2>
       <div v-if="!chatbi.sources.length" class="panel-card empty-card">
         <strong>还没有数据源</strong>
         <p>先添加 MySQL、PostgreSQL 或 SQL Server，再回来提问。</p>

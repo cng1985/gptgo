@@ -1,11 +1,16 @@
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
-import { addFiles, chat, optimizeDraft, removeAttachment, send, stop, toggleWeb } from '../stores/chat'
+import { findAgent } from '../stores/agent'
+import { addFiles, chat, optimizeDraft, removeAttachment, send, stop } from '../stores/chat'
 
 const box = ref(null)
 const fileRef = ref(null)
 let recognition = null
+const placeholder = computed(() => {
+  const agent = findAgent(chat.agentId)
+  return agent ? `给${agent.name}发送消息` : '给 AI 发送消息'
+})
 
 watch(
   () => chat.draft,
@@ -87,17 +92,13 @@ function toggleMic() {
         ref="box"
         v-model="chat.draft"
         rows="1"
-        placeholder="问数、分析，或给 AI 发送消息"
+        :placeholder="placeholder"
         @keydown="onKeydown"
       />
       <div class="composer-bar">
         <div class="composer-left">
           <button class="circle-tool" type="button" aria-label="添加文件" @click="pickFiles">
             <Icon name="paperclip" :size="16" />
-          </button>
-          <button class="tool-chip" :class="{ on: chat.webSearch }" type="button" @click="toggleWeb">
-            <Icon name="globe" :size="15" />
-            联网搜索
           </button>
           <button class="opt-chip" type="button" :disabled="chat.optimizing" @click="optimizeDraft">
             <Icon name="spark" :size="15" />

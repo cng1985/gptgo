@@ -25,6 +25,7 @@ func (c *Controller) Register(api *gin.RouterGroup) {
 	api.POST("/message/search", c.messages)
 	api.POST("/chat/stream", c.stream)
 	api.POST("/chat/optimize", c.optimize)
+	api.POST("/ask", c.ask)
 }
 
 func (c *Controller) create(ctx *gin.Context) {
@@ -129,6 +130,20 @@ func (c *Controller) messages(ctx *gin.Context) {
 
 func (c *Controller) stream(ctx *gin.Context) {
 	ServeStream(ctx, c.resource, c.models)
+}
+
+func (c *Controller) ask(ctx *gin.Context) {
+	var request AskRequest
+	if err := response.BindJSON(ctx, &request); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.resource.AskOnce(ctx.Request.Context(), &request)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
 }
 
 func (c *Controller) optimize(ctx *gin.Context) {

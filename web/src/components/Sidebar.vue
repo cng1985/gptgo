@@ -3,10 +3,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from './Icon.vue'
 import SparkleMark from './SparkleMark.vue'
+import { agents, openAgentChat } from '../stores/agent'
 import { chat, logout, refreshConversations, removeConversation, renameConversation, resetDraft, saveName, stop } from '../stores/chat'
 import { groupLabel } from '../utils/time'
 
-const productLinks = [
+const biLinks = [
   { name: 'bi', path: '/bi', icon: 'chart', label: '问数' },
   { name: 'datasources', path: '/datasources', icon: 'database', label: '数据源' },
   { name: 'usage', path: '/usage', icon: 'spark', label: '用量' },
@@ -15,6 +16,8 @@ const productLinks = [
 
 const route = useRoute()
 const router = useRouter()
+const biMode = computed(() => biLinks.some((item) => item.name === route.name))
+const agentItems = computed(() => agents.items.slice(0, 6))
 const searchOpen = ref(false)
 const searchRef = ref(null)
 const menuId = ref('')
@@ -58,6 +61,10 @@ function openPath(path) {
   menuId.value = ''
   chat.sidebarOpen = false
   router.push(path)
+}
+
+function startAgent(item) {
+  openAgentChat(router, item)
 }
 
 function newChat() {
@@ -148,13 +155,13 @@ async function signOut() {
       <span class="brand-mark"><SparkleMark :size="16" /></span>
       <span>ChatBI AI</span>
     </div>
-    <button class="new-chat" type="button" @click="newChat">
+    <button v-if="!biMode" class="new-chat" type="button" @click="newChat">
       <span class="new-chat-label"><Icon name="pencil" :size="16" /> 新建对话</span>
       <span class="kbd">Ctrl K</span>
     </button>
-    <nav class="side-nav">
+    <nav v-if="biMode" class="side-nav bi-nav">
       <button
-        v-for="item in productLinks"
+        v-for="item in biLinks"
         :key="item.name"
         type="button"
         :class="{ active: route.name === item.name }"
@@ -164,15 +171,36 @@ async function signOut() {
         <span>{{ item.label }}</span>
       </button>
     </nav>
-    <button v-if="!searchOpen" class="search-entry" type="button" @click="openSearch">
+    <div v-else class="side-section">
+      <div class="side-section-head">
+        <h3>智能体</h3>
+        <button type="button" @click="openPath('/agents')">管理</button>
+      </div>
+      <button
+        v-for="item in agentItems"
+        :key="item.id"
+        class="agent-link"
+        :class="{ active: String(chat.agentId) === String(item.id) && !route.params.id }"
+        type="button"
+        @click="startAgent(item)"
+      >
+        <Icon name="bot" :size="14" />
+        <span>{{ item.name }}</span>
+      </button>
+      <button v-if="!agentItems.length" class="search-entry" type="button" @click="openPath('/agents')">
+        <Icon name="bot" :size="16" />
+        <span>创建智能体</span>
+      </button>
+    </div>
+    <button v-if="!biMode && !searchOpen" class="search-entry" type="button" @click="openSearch">
       <Icon name="search" :size="16" />
       <span>搜索对话</span>
     </button>
-    <label v-else class="search-box">
+    <label v-else-if="!biMode" class="search-box">
       <Icon name="search" :size="16" />
       <input ref="searchRef" :value="chat.keyword" placeholder="搜索对话" @input="onSearchInput" />
     </label>
-    <div class="history">
+    <div v-if="!biMode" class="history">
       <p v-if="chat.booted && !groups.length" class="history-empty">没有匹配的对话</p>
       <section v-for="group in groups" :key="group.label" class="history-group">
         <h3>{{ group.label }}</h3>
@@ -190,7 +218,8 @@ async function signOut() {
             @blur="commitRename(item)"
           />
           <button v-else class="history-title" type="button" :title="item.title" @click="openItem(item.id)">
-            {{ item.title }}
+            <Icon v-if="item.agent_id && String(item.agent_id) !== '0'" name="bot" :size="13" />
+            <span>{{ item.title }}</span>
           </button>
           <button class="more" type="button" aria-label="对话操作" @click.stop="menuId = menuId === String(item.id) ? '' : String(item.id)">
             <Icon name="more" :size="16" />
@@ -203,7 +232,15 @@ async function signOut() {
       </section>
     </div>
     <div class="sidebar-foot">
-      <button class="workspace-link" :class="{ active: route.name === 'workspace' }" type="button" @click="router.push('/workspace'); chat.sidebarOpen = false">
+      <button v-if="biMode" class="workspace-link" type="button" @click="openPath('/')">
+        <Icon name="pencil" :size="16" />
+        <span>返回对话</span>
+      </button>
+      <button v-else class="workspace-link" :class="{ active: route.name === 'bi' }" type="button" @click="openPath('/bi')">
+        <Icon name="chart" :size="16" />
+        <span>问数</span>
+      </button>
+      <button class="workspace-link" :class="{ active: route.name === 'workspace' }" type="button" @click="openPath('/workspace')">
         <Icon name="home" :size="16" />
         <span>返回工作台</span>
       </button>

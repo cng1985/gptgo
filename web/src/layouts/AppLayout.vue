@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Sidebar from '../components/Sidebar.vue'
+import { refreshAgents } from '../stores/agent'
 import { boot, chat, notify, resetDraft, stop } from '../stores/chat'
 
 const router = useRouter()
@@ -19,6 +20,7 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   try {
     await boot()
+    refreshAgents().catch((error) => notify(error.message || '智能体加载失败'))
   } catch (error) {
     if (error.code === 401) {
       router.push('/login')

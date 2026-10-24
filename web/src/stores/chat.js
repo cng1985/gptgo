@@ -31,7 +31,7 @@ export const chat = reactive({
   attachments: [],
   model: localStorage.getItem('chatbi-model') || 'minimax-m3.1-flash',
   thinking: localStorage.getItem('chatbi-thinking') || 'off',
-  webSearch: localStorage.getItem('chatbi-web') === '1',
+  agentId: '',
   keyword: '',
   searching: false,
   streaming: false,
@@ -61,11 +61,6 @@ export function setModel(id) {
 export function setThinking(id) {
   chat.thinking = id
   localStorage.setItem('chatbi-thinking', id)
-}
-
-export function toggleWeb() {
-  chat.webSearch = !chat.webSearch
-  localStorage.setItem('chatbi-web', chat.webSearch ? '1' : '0')
 }
 
 export function toggleTheme() {
@@ -107,6 +102,7 @@ function resetWorkspace() {
   chat.draft = ''
   chat.attachments = []
   chat.keyword = ''
+  chat.agentId = ''
   chat.booted = false
   chat.sidebarOpen = false
 }
@@ -183,8 +179,8 @@ export async function openConversation(id, { force = false } = {}) {
   chat.messages = payload.data || []
   if (one.data?.model) setModel(one.data.model)
   if (one.data?.thinking_mode) setThinking(one.data.thinking_mode)
-  chat.webSearch = Boolean(one.data?.web_search)
-  localStorage.setItem('chatbi-web', chat.webSearch ? '1' : '0')
+  const agentId = one.data?.agent_id
+  chat.agentId = agentId && String(agentId) !== '0' ? String(agentId) : ''
 }
 
 export function resetDraft() {
@@ -193,6 +189,7 @@ export function resetDraft() {
   chat.messages = []
   chat.draft = ''
   chat.attachments = []
+  chat.agentId = ''
   chat.sidebarOpen = false
 }
 
@@ -258,10 +255,10 @@ export async function send({ content, regenerateId, editId } = {}) {
     content: regenerateId ? '' : text,
     model: chat.model,
     thinking_mode: chat.thinking,
-    web_search: chat.webSearch,
     attachments: regenerateId ? [] : files,
   }
   if (chat.activeId) body.conversation_id = String(chat.activeId)
+  if (!chat.activeId && chat.agentId) body.agent_id = String(chat.agentId)
   if (regenerateId) body.regenerate_message_id = String(regenerateId)
   if (editId) body.edit_message_id = String(editId)
 
