@@ -100,6 +100,11 @@ defineProps({
       <path d="M12 16V5" />
       <path d="M17 16v-4" />
     </template>
+    <template v-else-if="name === 'plug'">
+      <path d="M9 7V3.5M15 7V3.5" />
+      <path d="M8 7h8v5a4 4 0 0 1-8 0V7z" />
+      <path d="M12 16v4.5" />
+    </template>
     <template v-else-if="name === 'coin'">
       <circle cx="12" cy="12" r="8" />
       <path d="M12 7.5v9" />

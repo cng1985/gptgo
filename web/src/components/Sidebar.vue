@@ -191,6 +191,10 @@ async function signOut() {
         <Icon name="bot" :size="16" />
         <span>创建智能体</span>
       </button>
+      <button class="search-entry" :class="{ active: route.name === 'tools' }" type="button" @click="openPath('/tools')">
+        <Icon name="plug" :size="16" />
+        <span>工具与 MCP</span>
+      </button>
     </div>
     <button v-if="!biMode && !searchOpen" class="search-entry" type="button" @click="openSearch">
       <Icon name="search" :size="16" />

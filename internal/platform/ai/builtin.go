@@ -2,6 +2,9 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -13,17 +16,34 @@ type Request struct {
 	SearchNotes  string
 	AgentName    string
 	Instructions string
+	Tools        []Tool
+}
+
+type Tool struct {
+	Name        string
+	Description string
+	Parameters  json.RawMessage
+}
+
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments string
 }
 
 type Message struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	Name       string
+	ToolCallID string
+	ToolCalls  []ToolCall
 }
 
 type Delta struct {
-	Thinking string
-	Content  string
-	Err      error
+	Thinking  string
+	Content   string
+	ToolCalls []ToolCall
+	Err       error
 }
 
 type Builtin struct {
@@ -31,8 +51,22 @@ type Builtin struct {
 }
 
 func (b *Builtin) Stream(ctx context.Context, req Request) (<-chan Delta, error) {
+	if calls := planToolCalls(req); len(calls) > 0 {
+		ch := make(chan Delta, 1)
+		go func() {
+			defer close(ch)
+			select {
+			case <-ctx.Done():
+			case ch <- Delta{ToolCalls: calls}:
+			}
+		}()
+		return ch, nil
+	}
 	question := lastUser(req.Messages)
 	thinking, answer := Compose(question, req.SearchNotes, req.ThinkingMode)
+	if notes := toolResultNotes(req.Messages); notes != "" {
+		answer = "结论来自这次工具调用。\n\n" + notes
+	}
 	if strings.TrimSpace(req.Instructions) != "" {
 		name := strings.TrimSpace(req.AgentName)
 		if name == "" {

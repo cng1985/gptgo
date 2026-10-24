@@ -23,6 +23,7 @@ type Message struct {
 	Content        string
 	Thinking       string
 	Chart          string
+	Tools          string
 	Status         string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
