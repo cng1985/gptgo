@@ -34,7 +34,7 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("打开数据库失败: %w", err)
+		return nil, fmt.Errorf("打开数据库 %s 失败: %w", cfg.SQLiteFile(), err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -47,7 +47,7 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 }
 
 func sqliteDSN(cfg *config.Config) (string, error) {
-	path := cfg.SQLiteFile()
+	path := sqliteURIPath(cfg.SQLiteFile())
 	fk := 0
 	if cfg.Database.SQLite.ForeignKeys {
 		fk = 1
@@ -60,6 +60,24 @@ func sqliteDSN(cfg *config.Config) (string, error) {
 	raw := fmt.Sprintf("_pragma=foreign_keys(%d)&_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)", fk, ms, mode)
 	u := url.URL{Scheme: "file", Path: path, RawQuery: raw}
 	return u.String(), nil
+}
+
+// sqliteURIPath 把本地路径转成 SQLite file URI 的路径。
+// Windows 盘符必须写成 /C:/...。否则 url.URL 会把盘符当成主机，生成 file://C:/...，数据库打不开，进程退出。
+func sqliteURIPath(path string) string {
+	slash := strings.ReplaceAll(path, "\\", "/")
+	if isWindowsDrivePath(slash) {
+		return "/" + slash
+	}
+	return slash
+}
+
+func isWindowsDrivePath(slash string) bool {
+	if len(slash) < 3 || slash[1] != ':' || slash[2] != '/' {
+		return false
+	}
+	letter := slash[0]
+	return (letter >= 'A' && letter <= 'Z') || (letter >= 'a' && letter <= 'z')
 }
 
 func Hook(lc fx.Lifecycle, db *gorm.DB) {
