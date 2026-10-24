@@ -71,6 +71,20 @@ func (r *Router) Optimize(ctx context.Context, content, model string) (string, e
 	return r.builtin.Optimize(ctx, content, model)
 }
 
+func (r *Router) Author(ctx context.Context, prompt, model string) (string, error) {
+	if r.useRemote(model) {
+		raw, err := r.remote.Author(ctx, prompt, model)
+		if err == nil && validDraft(raw) {
+			return raw, nil
+		}
+		if err == nil {
+			err = fmt.Errorf("模型没有返回智能体配置")
+		}
+		r.log.Warn("agent draft fell back", "err", errString(err))
+	}
+	return r.builtin.Author(ctx, prompt, model)
+}
+
 func (r *Router) useRemote(model string) bool {
 	if model == "builtin" || r.cfg.AI.Provider == "builtin" || r.remote == nil || !r.remote.Ready() {
 		return false

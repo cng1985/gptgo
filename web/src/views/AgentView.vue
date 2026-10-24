@@ -3,10 +3,12 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHead from '../components/PageHead.vue'
 import { models, notify } from '../stores/chat'
-import { agents, loadAgent, openAgentChat, refreshAgents, removeAgent, saveAgent } from '../stores/agent'
+import { agents, draftAgent, loadAgent, openAgentChat, refreshAgents, removeAgent, saveAgent } from '../stores/agent'
 
 const router = useRouter()
 const saving = ref(false)
+const drafting = ref(false)
+const idea = ref('')
 const form = reactive(blank())
 
 function blank() {
@@ -37,6 +39,7 @@ function fill(agent) {
 
 function reset() {
   Object.assign(form, blank())
+  idea.value = ''
 }
 
 async function reload() {
@@ -52,6 +55,24 @@ async function edit(item) {
     fill(await loadAgent(item.id))
   } catch (error) {
     notify(error.message || '读取失败')
+  }
+}
+
+async function generate() {
+  const prompt = idea.value.trim()
+  if (!prompt) {
+    notify('先描述你想要的智能体')
+    return
+  }
+  drafting.value = true
+  try {
+    const draft = await draftAgent({ prompt, model: form.model })
+    fill({ ...draft, id: form.id })
+    notify('已生成草稿，确认后保存')
+  } catch (error) {
+    notify(error.message || '生成失败')
+  } finally {
+    drafting.value = false
   }
 }
 
@@ -104,7 +125,7 @@ onMounted(reload)
     <div class="panel-body">
       <header class="panel-intro">
         <h1>按你的设定回答</h1>
-        <p>每个智能体有自己的名称、开场白和回复规则。开始对话后，后续回答都会带上这段设定。问数仍然在单独的页面里。</p>
+        <p>每个智能体有自己的名称、开场白和回复规则。用一句话生成草稿，确认后再保存。开始对话后，后续回答都会带上这段设定。问数仍然在单独的页面里。</p>
       </header>
       <div class="agent-layout">
         <section class="panel-card">
@@ -128,18 +149,30 @@ onMounted(reload)
         <form class="panel-card source-form" @submit.prevent="save">
           <h2>{{ form.id ? '编辑智能体' : '新建智能体' }}</h2>
           <label class="field">
+            模型
+            <select v-model="form.model">
+              <option v-for="item in models" :key="item.id" :value="item.id">{{ item.label }}</option>
+            </select>
+          </label>
+          <div class="draft-box">
+            <label class="field">
+              用一句话创建
+              <textarea v-model="idea" maxlength="1000" placeholder="例如：做一个周报助手，只用三句话，先给结论" />
+            </label>
+            <div class="form-actions">
+              <button class="opt-chip" type="button" :disabled="drafting || !idea.trim()" @click="generate">
+                {{ drafting ? '生成中' : 'AI 生成' }}
+              </button>
+            </div>
+            <p class="form-note">按上方选择的模型生成，填进表单后才保存。选内置助手或没有密钥时在本地生成。描述里写明 DeepSeek 或 MiniMax 时，会改用对应模型。</p>
+          </div>
+          <label class="field">
             名称
             <input v-model="form.name" maxlength="40" placeholder="例如：周报助手" />
           </label>
           <label class="field">
             简介
             <input v-model="form.description" maxlength="200" placeholder="一句话说明它做什么" />
-          </label>
-          <label class="field">
-            模型
-            <select v-model="form.model">
-              <option v-for="item in models" :key="item.id" :value="item.id">{{ item.label }}</option>
-            </select>
           </label>
           <label class="field">
             设定

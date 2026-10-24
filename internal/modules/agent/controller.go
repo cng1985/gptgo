@@ -16,6 +16,7 @@ func NewController(resource *Resource) *Controller {
 
 func (c *Controller) Register(api *gin.RouterGroup) {
 	api.POST("/agent/create", c.create)
+	api.POST("/agent/draft", c.draft)
 	api.POST("/agent/update", c.update)
 	api.POST("/agent/one", c.one)
 	api.POST("/agent/search", c.search)
@@ -29,6 +30,20 @@ func (c *Controller) create(ctx *gin.Context) {
 		return
 	}
 	result, err := c.resource.Create(ctx.Request.Context(), &request)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
+}
+
+func (c *Controller) draft(ctx *gin.Context) {
+	var request AgentDraftRequest
+	if err := response.BindJSON(ctx, &request); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.resource.Draft(ctx.Request.Context(), &request)
 	if err != nil {
 		response.HandleError(ctx, err)
 		return
