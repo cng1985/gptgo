@@ -11,7 +11,7 @@ go run ./cmd/server
 
 浏览器打开 `http://127.0.0.1:8080`。
 
-首次启动使用 SQLite `data/app.db`，并写入一组示例对话，方便直接看到「今天 / 昨天 / 最近 7 天」。生产配置 `application-pro.yaml` 关闭示例数据。
+首次启动使用 SQLite `data/app.db`。默认开启登录注册，打开页面后先注册或登录，对话按账号分开保存。把 `auth.enabled` 设为 `false` 会回到本机单用户：自动使用显示名 ada，并在空库时写入示例对话。生产配置 `application-pro.yaml` 关闭示例数据。
 
 ```bash
 go test ./...
@@ -33,7 +33,7 @@ APP_AI_API_KEY=你的密钥 APP_AI_BASE_URL=https://api.openai.com/v1 APP_AI_UPS
 - 后端是 Go、Gin、GORM 和 Fx。业务输入输出保持一个 Request/Search 对一个 Response/PageResponse。
 - 前端是 Vue 3、JavaScript 和 Vite。
 - 数据库默认且当前唯一完成验证的是 SQLite。MySQL、PostgreSQL、SQL Server 只保留配置位，连接时会明确失败。
-- `auth.enabled` 必须为 false。页面里的 ada 是本机单用户，不表示已经实现登录会话。
+- `auth.enabled` 为 true 时使用 HttpOnly 会话 cookie。注册、登录和退出走 `/api/account/register`、`/api/account/login`、`/api/account/logout`。设为 false 时不校验会话，页面里的 ada 仍是本机单用户。
 - `app.seed_demo` 是本项目增加的配置。它只在空库时写入示例对话，关闭后不影响已有数据。
 
 配置目录固定在 `configs/`。启动参数支持 `--base-dir`、`--config-dir`、`--data-dir` 和 `--profile`。

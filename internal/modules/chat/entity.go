@@ -4,6 +4,7 @@ import "time"
 
 type Conversation struct {
 	ID           int64 `gorm:"primaryKey;autoIncrement"`
+	AccountID    int64
 	Title        string
 	Model        string
 	ThinkingMode string

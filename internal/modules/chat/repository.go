@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"gptgo/internal/platform/domain"
 	apperr "gptgo/internal/platform/errors"
 	"gptgo/internal/platform/response"
 )
@@ -22,8 +23,13 @@ func NewRepository(db *gorm.DB) *Repository {
 
 func (r *Repository) Create(ctx context.Context, request *ConversationRequest) (response.Response[ConversationResponse], error) {
 	var result response.Response[ConversationResponse]
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
 	now := time.Now().UTC()
 	entity := Conversation{
+		AccountID:    owner,
 		Title:        request.Title,
 		Model:        request.Model,
 		ThinkingMode: request.ThinkingMode,
@@ -40,8 +46,12 @@ func (r *Repository) Create(ctx context.Context, request *ConversationRequest) (
 
 func (r *Repository) Update(ctx context.Context, request *ConversationRequest) (response.Response[ConversationResponse], error) {
 	var result response.Response[ConversationResponse]
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
 	title := strings.TrimSpace(request.Title)
-	res := r.db.WithContext(ctx).Model(&Conversation{}).Where("id = ?", request.ID).Updates(map[string]any{
+	res := r.db.WithContext(ctx).Model(&Conversation{}).Where("id = ? AND account_id = ?", request.ID, owner).Updates(map[string]any{
 		"title":      title,
 		"updated_at": time.Now().UTC(),
 	})
@@ -56,8 +66,12 @@ func (r *Repository) Update(ctx context.Context, request *ConversationRequest) (
 
 func (r *Repository) One(ctx context.Context, request *ConversationRequest) (response.Response[ConversationResponse], error) {
 	var result response.Response[ConversationResponse]
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
 	var entity Conversation
-	err := r.db.WithContext(ctx).Where("id = ?", request.ID).First(&entity).Error
+	err = r.db.WithContext(ctx).Where("id = ? AND account_id = ?", request.ID, owner).First(&entity).Error
 	if err != nil {
 		return result, mapDB(err)
 	}
@@ -67,9 +81,13 @@ func (r *Repository) One(ctx context.Context, request *ConversationRequest) (res
 
 func (r *Repository) Search(ctx context.Context, search *ConversationSearch) (response.PageResponse[ConversationSimple], error) {
 	var result response.PageResponse[ConversationSimple]
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
 	offset := int64(search.Page-1) * int64(search.PageSize)
 	base := func() *gorm.DB {
-		query := r.db.WithContext(ctx).Model(&Conversation{})
+		query := r.db.WithContext(ctx).Model(&Conversation{}).Where("account_id = ?", owner)
 		if keyword := strings.TrimSpace(search.Keyword); keyword != "" {
 			query = query.Where("title LIKE ? ESCAPE '\\'", likePattern(keyword))
 		}
@@ -80,7 +98,7 @@ func (r *Repository) Search(ctx context.Context, search *ConversationSearch) (re
 		return result, mapDB(err)
 	}
 	var rows []Conversation
-	err := base().Order("updated_at desc").Order("id desc").Offset(int(offset)).Limit(search.PageSize).Find(&rows).Error
+	err = base().Order("updated_at desc").Order("id desc").Offset(int(offset)).Limit(search.PageSize).Find(&rows).Error
 	if err != nil {
 		return result, mapDB(err)
 	}
@@ -95,9 +113,13 @@ func (r *Repository) Search(ctx context.Context, search *ConversationSearch) (re
 
 func (r *Repository) Delete(ctx context.Context, request *ConversationRequest) (response.Response[ConversationResponse], error) {
 	var result response.Response[ConversationResponse]
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
 	var entity Conversation
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("id = ?", request.ID).First(&entity).Error; err != nil {
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ? AND account_id = ?", request.ID, owner).First(&entity).Error; err != nil {
 			return err
 		}
 		if err := deleteConversationGraph(tx, request.ID); err != nil {
@@ -114,14 +136,31 @@ func (r *Repository) Delete(ctx context.Context, request *ConversationRequest) (
 
 func (r *Repository) Clear(ctx context.Context, _ *ConversationClearRequest) (response.Response[ConversationResponse], error) {
 	var result response.Response[ConversationResponse]
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&Attachment{}).Error; err != nil {
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var ids []int64
+		if err := tx.Model(&Conversation{}).Where("account_id = ?", owner).Pluck("id", &ids).Error; err != nil {
 			return err
 		}
-		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&Message{}).Error; err != nil {
+		if len(ids) == 0 {
+			return nil
+		}
+		var messageIDs []int64
+		if err := tx.Model(&Message{}).Where("conversation_id IN ?", ids).Pluck("id", &messageIDs).Error; err != nil {
 			return err
 		}
-		return tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&Conversation{}).Error
+		if len(messageIDs) > 0 {
+			if err := tx.Where("message_id IN ?", messageIDs).Delete(&Attachment{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("conversation_id IN ?", ids).Delete(&Message{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("account_id = ?", owner).Delete(&Conversation{}).Error
 	})
 	if err != nil {
 		return result, mapDB(err)
@@ -131,6 +170,17 @@ func (r *Repository) Clear(ctx context.Context, _ *ConversationClearRequest) (re
 
 func (r *Repository) SearchMessages(ctx context.Context, search *MessageSearch) (response.PageResponse[MessageSimple], error) {
 	var result response.PageResponse[MessageSimple]
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
+	var exists int64
+	if err := r.db.WithContext(ctx).Model(&Conversation{}).Where("id = ? AND account_id = ?", search.ConversationID, owner).Count(&exists).Error; err != nil {
+		return result, mapDB(err)
+	}
+	if exists == 0 {
+		return result, apperr.NotFound("对话不存在")
+	}
 	base := func() *gorm.DB {
 		return r.db.WithContext(ctx).Model(&Message{}).Where("conversation_id = ?", search.ConversationID)
 	}
@@ -138,16 +188,9 @@ func (r *Repository) SearchMessages(ctx context.Context, search *MessageSearch) 
 	if err := base().Count(&total).Error; err != nil {
 		return result, mapDB(err)
 	}
-	var exists int64
-	if err := r.db.WithContext(ctx).Model(&Conversation{}).Where("id = ?", search.ConversationID).Count(&exists).Error; err != nil {
-		return result, mapDB(err)
-	}
-	if exists == 0 {
-		return result, apperr.NotFound("对话不存在")
-	}
 	offset := int64(search.Page-1) * int64(search.PageSize)
 	var rows []Message
-	err := base().Order("id asc").Offset(int(offset)).Limit(search.PageSize).Find(&rows).Error
+	err = base().Order("id asc").Offset(int(offset)).Limit(search.PageSize).Find(&rows).Error
 	if err != nil {
 		return result, mapDB(err)
 	}
@@ -162,7 +205,11 @@ func (r *Repository) SearchMessages(ctx context.Context, search *MessageSearch) 
 
 func (r *Repository) Prepare(ctx context.Context, request *ChatStreamRequest) (response.Response[ChatPrepareResponse], error) {
 	var result response.Response[ChatPrepareResponse]
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var (
 			conversation *Conversation
 			userID       int64
@@ -171,11 +218,11 @@ func (r *Repository) Prepare(ctx context.Context, request *ChatStreamRequest) (r
 		)
 		switch {
 		case request.RegenerateMessageID > 0:
-			conversation, userID, assistantID, err = prepareRegenerate(tx, request)
+			conversation, userID, assistantID, err = prepareRegenerate(tx, request, owner)
 		case request.EditMessageID > 0:
-			conversation, userID, assistantID, err = prepareEdit(tx, request)
+			conversation, userID, assistantID, err = prepareEdit(tx, request, owner)
 		default:
-			conversation, userID, assistantID, err = prepareNew(tx, request)
+			conversation, userID, assistantID, err = prepareNew(tx, request, owner)
 		}
 		if err != nil {
 			return err
@@ -204,7 +251,15 @@ func (r *Repository) Prepare(ctx context.Context, request *ChatStreamRequest) (r
 
 func (r *Repository) Complete(ctx context.Context, request *ChatCompleteRequest) (response.Response[ChatCompleteResponse], error) {
 	var result response.Response[ChatCompleteResponse]
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return result, err
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var conversation Conversation
+		if err := tx.Where("id = ? AND account_id = ?", request.ConversationID, owner).First(&conversation).Error; err != nil {
+			return err
+		}
 		res := tx.Model(&Message{}).
 			Where("id = ? AND conversation_id = ? AND role = ?", request.AssistantMessageID, request.ConversationID, "assistant").
 			Updates(map[string]any{
@@ -235,11 +290,12 @@ func (r *Repository) Complete(ctx context.Context, request *ChatCompleteRequest)
 	return result, nil
 }
 
-func prepareNew(tx *gorm.DB, request *ChatStreamRequest) (*Conversation, int64, int64, error) {
+func prepareNew(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*Conversation, int64, int64, error) {
 	now := time.Now().UTC()
 	var conversation Conversation
 	if request.ConversationID == 0 {
 		conversation = Conversation{
+			AccountID:    owner,
 			Title:        titleFrom(request.Content),
 			Model:        request.Model,
 			ThinkingMode: request.ThinkingMode,
@@ -250,7 +306,7 @@ func prepareNew(tx *gorm.DB, request *ChatStreamRequest) (*Conversation, int64, 
 		if err := tx.Create(&conversation).Error; err != nil {
 			return nil, 0, 0, err
 		}
-	} else if err := tx.Where("id = ?", request.ConversationID).First(&conversation).Error; err != nil {
+	} else if err := tx.Where("id = ? AND account_id = ?", request.ConversationID, owner).First(&conversation).Error; err != nil {
 		return nil, 0, 0, err
 	} else if err := touchConversation(tx, &conversation, request, now); err != nil {
 		return nil, 0, 0, err
@@ -284,7 +340,7 @@ func prepareNew(tx *gorm.DB, request *ChatStreamRequest) (*Conversation, int64, 
 	return &conversation, user.ID, assistant.ID, nil
 }
 
-func prepareRegenerate(tx *gorm.DB, request *ChatStreamRequest) (*Conversation, int64, int64, error) {
+func prepareRegenerate(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*Conversation, int64, int64, error) {
 	var assistant Message
 	if err := tx.Where("id = ? AND role = ?", request.RegenerateMessageID, "assistant").First(&assistant).Error; err != nil {
 		return nil, 0, 0, err
@@ -299,7 +355,10 @@ func prepareRegenerate(tx *gorm.DB, request *ChatStreamRequest) (*Conversation, 
 		return nil, 0, 0, apperr.NotFound("找不到要重新回答的问题")
 	}
 	var conversation Conversation
-	if err := tx.Where("id = ?", assistant.ConversationID).First(&conversation).Error; err != nil {
+	if err := tx.Where("id = ? AND account_id = ?", assistant.ConversationID, owner).First(&conversation).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, 0, apperr.NotFound("消息不存在")
+		}
 		return nil, 0, 0, err
 	}
 	now := time.Now().UTC()
@@ -315,7 +374,7 @@ func prepareRegenerate(tx *gorm.DB, request *ChatStreamRequest) (*Conversation, 
 	return &conversation, user.ID, assistant.ID, nil
 }
 
-func prepareEdit(tx *gorm.DB, request *ChatStreamRequest) (*Conversation, int64, int64, error) {
+func prepareEdit(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*Conversation, int64, int64, error) {
 	var user Message
 	if err := tx.Where("id = ? AND role = ?", request.EditMessageID, "user").First(&user).Error; err != nil {
 		return nil, 0, 0, err
@@ -324,7 +383,10 @@ func prepareEdit(tx *gorm.DB, request *ChatStreamRequest) (*Conversation, int64,
 		return nil, 0, 0, apperr.NotFound("消息不存在")
 	}
 	var conversation Conversation
-	if err := tx.Where("id = ?", user.ConversationID).First(&conversation).Error; err != nil {
+	if err := tx.Where("id = ? AND account_id = ?", user.ConversationID, owner).First(&conversation).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, 0, apperr.NotFound("消息不存在")
+		}
 		return nil, 0, 0, err
 	}
 	now := time.Now().UTC()
@@ -500,6 +562,14 @@ func messageIDs(rows []Message) []int64 {
 func likePattern(keyword string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return "%" + replacer.Replace(keyword) + "%"
+}
+
+func ownerID(ctx context.Context) (int64, error) {
+	scope, ok := domain.ScopeFrom(ctx)
+	if !ok || scope.ActorID <= 0 {
+		return 0, apperr.Unauthorized("未登录")
+	}
+	return scope.ActorID, nil
 }
 
 func mapDB(err error) error {

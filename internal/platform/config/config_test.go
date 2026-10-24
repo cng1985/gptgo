@@ -38,11 +38,11 @@ func TestProfileOverlayReplacesScalar(t *testing.T) {
 	}
 }
 
-func TestAuthEnabledRejected(t *testing.T) {
+func TestAuthEnabledAccepted(t *testing.T) {
 	cfg := validConfig()
 	cfg.Auth.Enabled = true
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("未实现的认证不应该静默启用")
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
 

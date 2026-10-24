@@ -16,12 +16,14 @@ func Bootstrap(db *gorm.DB, cfg *config.Config, log *slog.Logger) error {
 	if err := database.Migrate(db, filepath.Join(cfg.App.BaseDir, "migrations")); err != nil {
 		return err
 	}
-	if err := account.Ensure(db); err != nil {
-		return err
-	}
-	if cfg.App.SeedDemo {
-		if err := chat.SeedDemo(db); err != nil {
+	if !cfg.Auth.Enabled {
+		if err := account.Ensure(db); err != nil {
 			return err
+		}
+		if cfg.App.SeedDemo {
+			if err := chat.SeedDemo(db); err != nil {
+				return err
+			}
 		}
 	}
 	log.Info("application ready",

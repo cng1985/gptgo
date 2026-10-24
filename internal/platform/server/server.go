@@ -21,10 +21,10 @@ type HTTPServer struct {
 	srv *http.Server
 }
 
-func NewEngine(cfg *config.Config, log *slog.Logger) *gin.Engine {
+func NewEngine(cfg *config.Config, log *slog.Logger, actors middleware.ActorResolver) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
-	middleware.Install(engine, cfg, log)
+	middleware.Install(engine, cfg, log, actors)
 	return engine
 }
 

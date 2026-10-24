@@ -252,9 +252,6 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("不支持的 journal_mode %q", c.Database.SQLite.JournalMode)
 	}
-	if c.Auth.Enabled {
-		return fmt.Errorf("当前版本是本地单用户，auth.enabled 必须为 false；会话认证尚未实现")
-	}
 	if c.Auth.SessionTTL.Std() <= 0 {
 		return fmt.Errorf("auth.session_ttl 必须为正数")
 	}

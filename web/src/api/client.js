@@ -2,6 +2,7 @@ export async function post(url, body) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    credentials: 'same-origin',
     body: JSON.stringify(body ?? {}),
   })
   let data = {}
@@ -11,7 +12,9 @@ export async function post(url, body) {
     data = {}
   }
   if (!response.ok || (typeof data.code === 'number' && data.code !== 200)) {
-    throw new Error(data.msg || '请求失败')
+    const error = new Error(data.msg || '请求失败')
+    error.code = typeof data.code === 'number' ? data.code : response.status
+    throw error
   }
   return data
 }
@@ -20,6 +23,7 @@ export async function stream(url, body, { signal, onEvent }) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    credentials: 'same-origin',
     body: JSON.stringify(body),
     signal,
   })
