@@ -335,11 +335,12 @@ func prepareNew(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*Conversa
 		Role:           "assistant",
 		Content:        "",
 		Thinking:       "",
+		ThinkingMode:   request.ThinkingMode,
 		Status:         "streaming",
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
+	if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "ThinkingMode", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
 		return nil, 0, 0, err
 	}
 	return &conversation, user.ID, assistant.ID, nil
@@ -417,11 +418,12 @@ func prepareEdit(tx *gorm.DB, request *ChatStreamRequest, owner int64) (*Convers
 		Role:           "assistant",
 		Content:        "",
 		Thinking:       "",
+		ThinkingMode:   request.ThinkingMode,
 		Status:         "streaming",
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
+	if err := tx.Select("ConversationID", "Role", "Content", "Thinking", "ThinkingMode", "Status", "CreatedAt", "UpdatedAt").Create(&assistant).Error; err != nil {
 		return nil, 0, 0, err
 	}
 	return &conversation, user.ID, assistant.ID, nil

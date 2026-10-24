@@ -98,6 +98,7 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 		"user_message_id":      formatID(data.UserMessageID),
 		"assistant_message_id": formatID(data.AssistantMessageID),
 		"title":                data.Title,
+		"thinking_mode":        data.ThinkingMode,
 	})
 
 	streamCtx := c.Request.Context()

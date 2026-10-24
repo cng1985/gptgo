@@ -9,9 +9,9 @@ export const models = [
 ]
 
 export const thinkingModes = [
-  { id: 'off', label: '不思考 · mini' },
-  { id: 'light', label: '轻量思考' },
-  { id: 'deep', label: '深度思考' },
+  { id: 'off', label: '不思考 · mini', hint: '直接回答，不展示推理' },
+  { id: 'light', label: '轻量思考', hint: '回答前折叠一段短推理' },
+  { id: 'deep', label: '深度思考', hint: '按步骤展开推理过程' },
 ]
 
 const allowedExt = new Set([
@@ -234,6 +234,7 @@ export async function send({ content, regenerateId, editId } = {}) {
     role: 'assistant',
     content: '',
     thinking: '',
+    thinking_mode: chat.thinking,
     tools: [],
     sources: [],
     searchStatus: '',
@@ -246,6 +247,7 @@ export async function send({ content, regenerateId, editId } = {}) {
     if (assistantIndex >= 0) {
       chat.messages[assistantIndex].content = ''
       chat.messages[assistantIndex].thinking = ''
+      chat.messages[assistantIndex].thinking_mode = chat.thinking
       chat.messages[assistantIndex].chart = null
       chat.messages[assistantIndex].tools = []
       chat.messages[assistantIndex].sources = []
@@ -293,7 +295,10 @@ export async function send({ content, regenerateId, editId } = {}) {
           if (!regenerateId && assistantIndex > 0) {
             chat.messages[assistantIndex - 1].id = payload.user_message_id
           }
-          if (current) current.id = payload.assistant_message_id
+          if (current) {
+            current.id = payload.assistant_message_id
+            if (payload.thinking_mode) current.thinking_mode = payload.thinking_mode
+          }
           const existing = chat.conversations.find((item) => String(item.id) === String(payload.conversation_id))
           if (!existing) {
             chat.conversations.unshift({

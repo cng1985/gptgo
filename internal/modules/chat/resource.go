@@ -256,7 +256,9 @@ func (r *Resource) AskOnce(ctx context.Context, request *AskRequest) (response.R
 		return zero, apperr.Invalid("问题过长")
 	}
 	switch request.ThinkingMode {
-	case "", "off", "light", "deep":
+	case "", "off":
+		request.ThinkingMode = "off"
+	case "light", "deep":
 	default:
 		return zero, apperr.Invalid("不支持的思考模式")
 	}
@@ -271,10 +273,11 @@ func (r *Resource) AskOnce(ctx context.Context, request *AskRequest) (response.R
 		}), nil
 	}
 	return response.OK(AskResponse{
-		Matched:  true,
-		Thinking: outcome.Thinking,
-		Answer:   outcome.Answer,
-		Chart:    outcome.Chart,
+		Matched:      true,
+		ThinkingMode: request.ThinkingMode,
+		Thinking:     outcome.Thinking,
+		Answer:       outcome.Answer,
+		Chart:        outcome.Chart,
 	}), nil
 }
 

@@ -122,8 +122,11 @@ onUnmounted(() => {
         <Icon name="chevron" :size="14" />
       </button>
       <div v-if="thinkOpen" class="menu think-menu">
-        <button v-for="item in thinkingModes" :key="item.id" type="button" :class="{ selected: item.id === chat.thinking }" @click="chooseThinking(item.id)">
-          <span>{{ item.label }}</span>
+        <button v-for="item in thinkingModes" :key="item.id" type="button" class="think-option" :class="{ selected: item.id === chat.thinking }" @click="chooseThinking(item.id)">
+          <span class="think-option-copy">
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.hint }}</small>
+          </span>
           <Icon v-if="item.id === chat.thinking" name="check" :size="16" />
         </button>
       </div>
