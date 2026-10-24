@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"gptgo/internal/platform/config"
+	"gptgo/internal/platform/search"
 )
 
 type Router struct {
 	cfg     *config.Config
 	builtin *Builtin
 	remote  *Client
+	web     *search.Client
 	log     *slog.Logger
 }
 
@@ -21,8 +23,20 @@ func NewRouter(cfg *config.Config, log *slog.Logger) *Router {
 		cfg:     cfg,
 		builtin: &Builtin{Delay: 18 * time.Millisecond},
 		remote:  NewClient(cfg),
+		web:     search.New(cfg),
 		log:     log,
 	}
+}
+
+func (r *Router) Search(ctx context.Context, query string) (search.Result, error) {
+	if r.web == nil {
+		return search.Result{}, fmt.Errorf("联网检索不可用")
+	}
+	result, err := r.web.Search(ctx, query)
+	if err != nil && r.log != nil {
+		r.log.Warn("web search failed", "err", errString(err))
+	}
+	return result, err
 }
 
 func (r *Router) Info() (string, bool) {

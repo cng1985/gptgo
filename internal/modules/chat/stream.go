@@ -15,6 +15,7 @@ import (
 	aiplat "gptgo/internal/platform/ai"
 	"gptgo/internal/platform/domain"
 	"gptgo/internal/platform/response"
+	"gptgo/internal/platform/search"
 )
 
 type Streamer interface {
@@ -24,6 +25,10 @@ type Streamer interface {
 type ToolSource interface {
 	Catalog(ctx context.Context) ([]aiplat.Tool, error)
 	Invoke(ctx context.Context, name, arguments string) (bool, string, error)
+}
+
+type WebSearcher interface {
+	Search(ctx context.Context, query string) (search.Result, error)
 }
 
 const maxToolRounds = 3
@@ -111,8 +116,37 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 		}
 	}
 	var traces []toolTrace
+	var sources []search.Hit
+	if request.WebSearch && status == "done" {
+		query := searchQuery(request, data.Messages)
+		if query != "" {
+			write("search", map[string]any{"status": "running", "query": query})
+			searcher, ok := models.(WebSearcher)
+			if !ok {
+				data.SearchNotes = "本次联网检索没有返回结果。"
+				write("search", map[string]any{"status": "error", "query": query})
+			} else {
+				result, err := searcher.Search(streamCtx, query)
+				switch {
+				case streamCtx.Err() != nil:
+					status = "stopped"
+				case err != nil || strings.TrimSpace(result.Notes) == "":
+					data.SearchNotes = "本次联网检索没有返回结果。"
+					state := "empty"
+					if err != nil {
+						state = "error"
+					}
+					write("search", map[string]any{"status": state, "query": query})
+				default:
+					data.SearchNotes = result.Notes
+					sources = result.Hits
+					write("search", map[string]any{"status": "done", "query": query, "sources": result.Hits})
+				}
+			}
+		}
+	}
 	rounds := 0
-	for {
+	for status == "done" {
 		if streamCtx.Err() != nil {
 			status = "stopped"
 			break
@@ -233,6 +267,12 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 			toolsJSON = string(raw)
 		}
 	}
+	sourcesJSON := ""
+	if len(sources) > 0 {
+		if raw, err := json.Marshal(sources); err == nil {
+			sourcesJSON = string(raw)
+		}
+	}
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
 	defer cancel()
 	if _, ok := domain.ScopeFrom(saveCtx); !ok {
@@ -246,6 +286,7 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 		Content:            content.String(),
 		Thinking:           thinking.String(),
 		Tools:              toolsJSON,
+		Sources:            sourcesJSON,
 		Status:             status,
 	})
 	if status == "done" {
@@ -265,4 +306,21 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 
 func formatID(id int64) string {
 	return fmt.Sprintf("%d", id)
+}
+
+func searchQuery(request ChatStreamRequest, turns []ModelTurn) string {
+	text := strings.TrimSpace(request.Content)
+	if text == "" {
+		for i := len(turns) - 1; i >= 0; i-- {
+			if turns[i].Role == "user" {
+				text = turns[i].Content
+				break
+			}
+		}
+	}
+	if i := strings.Index(text, "\n\n【附件 "); i >= 0 {
+		text = text[:i]
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	return clipRunes(text, 200)
 }

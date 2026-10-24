@@ -20,11 +20,14 @@ import (
 	"gptgo/internal/platform/database"
 	"gptgo/internal/platform/domain"
 	apperr "gptgo/internal/platform/errors"
+	"gptgo/internal/platform/search"
 )
 
 type fakeModels struct{}
 
-func (fakeModels) Search(context.Context, string) (string, error) { return "摘要", nil }
+func (fakeModels) Search(context.Context, string) (search.Result, error) {
+	return search.Result{Notes: "摘要"}, nil
+}
 func (fakeModels) Optimize(context.Context, string, string) (string, error) {
 	return "优化后的提示词", nil
 }

@@ -38,3 +38,7 @@ ai:
   default_model: minimax-m3.1-flash
   upstream_model: ""
   request_timeout: 120s
+search:
+  provider: duckduckgo
+  api_key: ""
+  timeout: 8s

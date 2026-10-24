@@ -49,6 +49,7 @@ type Config struct {
 	Auth     AuthConfig     `yaml:"auth"`
 	Logging  LoggingConfig  `yaml:"logging"`
 	AI       AIConfig       `yaml:"ai"`
+	Search   SearchConfig   `yaml:"search"`
 	Runtime  RuntimeInfo    `yaml:"-"`
 }
 
@@ -109,6 +110,12 @@ type AIConfig struct {
 	DefaultModel   string   `yaml:"default_model"`
 	UpstreamModel  string   `yaml:"upstream_model"`
 	RequestTimeout Duration `yaml:"request_timeout"`
+}
+
+type SearchConfig struct {
+	Provider string   `yaml:"provider"`
+	APIKey   string   `yaml:"api_key"`
+	Timeout  Duration `yaml:"timeout"`
 }
 
 func (c *Config) Address() string {
@@ -323,6 +330,17 @@ func (c *Config) Validate() error {
 	if c.AI.RequestTimeout.Std() <= 0 {
 		return fmt.Errorf("ai.request_timeout 必须为正数")
 	}
+	switch strings.ToLower(strings.TrimSpace(c.Search.Provider)) {
+	case "", "duckduckgo", "bing", "tavily", "off":
+	default:
+		return fmt.Errorf("未知 search.provider %q", c.Search.Provider)
+	}
+	if (c.Search.Provider == "bing" || c.Search.Provider == "tavily") && strings.TrimSpace(c.Search.APIKey) == "" {
+		return fmt.Errorf("search.provider=%s 时必须提供 api_key", c.Search.Provider)
+	}
+	if c.Search.Timeout.Std() < 0 {
+		return fmt.Errorf("search.timeout 不能为负数")
+	}
 	return nil
 }
 
@@ -494,6 +512,15 @@ func applyEnv(cfg *Config) error {
 		{"APP_AI_DEFAULT_MODEL", func(v string) error { cfg.AI.DefaultModel = v; return nil }},
 		{"APP_AI_UPSTREAM_MODEL", func(v string) error { cfg.AI.UpstreamModel = v; return nil }},
 		{"APP_AI_REQUEST_TIMEOUT", durationEnv(func(d Duration) { cfg.AI.RequestTimeout = d })},
+		{"APP_SEARCH_PROVIDER", func(v string) error { cfg.Search.Provider = v; return nil }},
+		{"APP_SEARCH_API_KEY", func(v string) error {
+			if strings.TrimSpace(v) == "" {
+				return fmt.Errorf("APP_SEARCH_API_KEY 已设置但为空")
+			}
+			cfg.Search.APIKey = v
+			return nil
+		}},
+		{"APP_SEARCH_TIMEOUT", durationEnv(func(d Duration) { cfg.Search.Timeout = d })},
 	}
 	for _, binding := range bindings {
 		value, ok := os.LookupEnv(binding.env)
