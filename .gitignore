@@ -1,0 +1,6 @@
+data/
+release/
+web/node_modules/
+*.log
+.DS_Store
+coverage.out

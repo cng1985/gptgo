@@ -1,0 +1,7 @@
+app:
+  seed_demo: false
+logging:
+  level: info
+  format: json
+server:
+  host: 127.0.0.1
