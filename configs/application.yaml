@@ -26,7 +26,7 @@ database:
     busy_timeout: 5s
     journal_mode: DELETE
 auth:
-  enabled: false
+  enabled: true
   session_ttl: 8h
 logging:
   level: info

@@ -13,7 +13,10 @@
 | `POST /api/message/search` | 分页读取消息 |
 | `POST /api/chat/stream` | 发送并流式回答，SSE |
 | `POST /api/chat/optimize` | 优化提示词 |
-| `POST /api/account/one` | 当前本地用户 |
+| `POST /api/account/register` | 注册并写入会话 cookie |
+| `POST /api/account/login` | 登录并写入会话 cookie |
+| `POST /api/account/logout` | 退出并清除会话 |
+| `POST /api/account/one` | 当前登录用户 |
 | `POST /api/account/update` | 修改显示名称 |
 | `GET /health/live` | 存活 |
 | `GET /health/ready` | 数据库可访问 |

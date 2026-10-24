@@ -23,7 +23,9 @@ const allowedExt = new Set([
 export const chat = reactive({
   conversations: [],
   messages: [],
-  account: { id: '', name: 'ada', provider: 'builtin', provider_ready: false },
+  account: { id: '', name: '', username: '', provider: 'builtin', provider_ready: false },
+  authenticated: false,
+  sessionReady: false,
   activeId: '',
   draft: '',
   attachments: [],
@@ -72,9 +74,74 @@ export function toggleTheme() {
   localStorage.setItem('chatbi-theme', chat.theme)
 }
 
+let pendingSession = null
+
+export function ensureSession() {
+  if (chat.sessionReady) return Promise.resolve(chat.authenticated)
+  if (!pendingSession) {
+    pendingSession = loadAccount()
+      .then(() => {
+        chat.authenticated = true
+        chat.sessionReady = true
+        return true
+      })
+      .catch((error) => {
+        pendingSession = null
+        if (error.code === 401) {
+          chat.authenticated = false
+          chat.sessionReady = true
+          pendingSession = Promise.resolve(false)
+          return false
+        }
+        throw error
+      })
+  }
+  return pendingSession
+}
+
+function resetWorkspace() {
+  stop()
+  chat.conversations = []
+  chat.messages = []
+  chat.activeId = ''
+  chat.draft = ''
+  chat.attachments = []
+  chat.keyword = ''
+  chat.booted = false
+  chat.sidebarOpen = false
+}
+
+export async function login(body) {
+  const result = await post('/api/account/login', body)
+  resetWorkspace()
+  chat.account = result.data
+  chat.authenticated = true
+  chat.sessionReady = true
+  return result.data
+}
+
+export async function register(body) {
+  const result = await post('/api/account/register', body)
+  resetWorkspace()
+  chat.account = result.data
+  chat.authenticated = true
+  chat.sessionReady = true
+  return result.data
+}
+
+export async function logout() {
+  await post('/api/account/logout', {})
+  resetWorkspace()
+  chat.account = { id: '', name: '', username: '', provider: 'builtin', provider_ready: false }
+  chat.authenticated = false
+  chat.sessionReady = true
+}
+
 export async function boot() {
   if (chat.booted) return
   await Promise.all([loadAccount(), refreshConversations()])
+  chat.authenticated = true
+  chat.sessionReady = true
   chat.booted = true
 }
 

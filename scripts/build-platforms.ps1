@@ -24,7 +24,7 @@ $version = if ($env:APP_VERSION) { $env:APP_VERSION } else { "dev" }
 $commit = "none"
 try { $commit = (git rev-parse --short HEAD).Trim() } catch { }
 $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-$ldflags = "-X main.version=$version -X main.commit=$commit -X main.buildTime=$built"
+$ldflags = "-X gptgo/internal/app.version=$version -X gptgo/internal/app.commit=$commit -X gptgo/internal/app.buildTime=$built"
 
 $targets = @(
     @{ GOOS = "windows"; GOARCH = "amd64"; Name = "chatbi.exe" },

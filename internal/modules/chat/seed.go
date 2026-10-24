@@ -43,6 +43,7 @@ func SeedDemo(db *gorm.DB) error {
 		for _, item := range items {
 			at := item.at.UTC()
 			conversation := Conversation{
+				AccountID:    1,
 				Title:        item.title,
 				Model:        "minimax-m3.1-flash",
 				ThinkingMode: "off",
