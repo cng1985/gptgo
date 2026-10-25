@@ -79,6 +79,13 @@ function sourceText(item) {
   return String(item?.snippet || item?.excerpt || '').trim()
 }
 
+function sourceMeta(item) {
+  const host = hostOf(item.url)
+  const engine = String(item?.engine || '').trim()
+  if (engine && host) return `${engine} · ${host}`
+  return engine || host
+}
+
 function searchHeadline(message) {
   const query = String(message.searchQuery || '').trim()
   if (message.searchStatus === 'running') {
@@ -122,7 +129,7 @@ onMounted(() => scrollIfNeeded(true))
               rel="noopener noreferrer"
             >
               <span class="search-hit-title">{{ item.title || item.url || '来源' }}</span>
-              <span v-if="hostOf(item.url)" class="search-hit-meta">{{ hostOf(item.url) }}</span>
+              <span v-if="sourceMeta(item)" class="search-hit-meta">{{ sourceMeta(item) }}</span>
               <span v-if="sourceText(item)" class="search-hit-snippet">{{ sourceText(item) }}</span>
             </component>
           </template>

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,6 +23,7 @@ type Hit struct {
 	URL     string `json:"url"`
 	Snippet string `json:"snippet"`
 	Excerpt string `json:"excerpt,omitempty"`
+	Engine  string `json:"engine,omitempty"`
 }
 
 // UnavailableNote 是检索没有可用结果时交给模型的说明。
@@ -61,6 +63,11 @@ type Client struct {
 	wikiEN         string
 	bingURL        string
 	tavilyURL      string
+	bingHTML       string
+	baiduURL       string
+	sogouURL       string
+	soURL          string
+	toutiaoURL     string
 }
 
 func New(cfg *config.Config) *Client {
@@ -75,6 +82,11 @@ func New(cfg *config.Config) *Client {
 		wikiEN:     "https://en.wikipedia.org/w/api.php",
 		bingURL:    "https://api.bing.microsoft.com/v7.0/search",
 		tavilyURL:  "https://api.tavily.com/search",
+		bingHTML:   "https://cn.bing.com/search",
+		baiduURL:   "https://m.baidu.com/s",
+		sogouURL:   "https://www.sogou.com/web",
+		soURL:      "https://m.so.com/s",
+		toutiaoURL: "https://so.toutiao.com/search",
 	}
 	if cfg != nil {
 		if provider := strings.ToLower(strings.TrimSpace(cfg.Search.Provider)); provider != "" {
@@ -126,14 +138,34 @@ func (c *Client) Search(ctx context.Context, query string) (Result, error) {
 func (c *Client) discover(ctx context.Context, query string) (Result, error) {
 	switch c.provider {
 	case "bing":
-		hits, err := c.bing(ctx, query)
-		return pack(hits, err)
+		return c.prefer(ctx, query, c.bing)
 	case "tavily":
-		hits, err := c.tavily(ctx, query)
-		return pack(hits, err)
+		return c.prefer(ctx, query, c.tavily)
 	default:
 		return c.duck(ctx, query)
 	}
+}
+
+// prefer 先用配置的检索接口。接口没有结果时，再走公开网页索引和中文搜索引擎。
+func (c *Client) prefer(ctx context.Context, query string, fetch func(context.Context, string) ([]Hit, error)) (Result, error) {
+	hits, err := fetch(ctx, query)
+	if packed, perr := pack(hits, err); perr == nil && len(packed.Hits) > 0 {
+		return packed, nil
+	}
+	if ctx.Err() != nil {
+		if err == nil {
+			err = ctx.Err()
+		}
+		return Result{}, err
+	}
+	fallback, ferr := c.duck(ctx, query)
+	if len(fallback.Hits) > 0 {
+		return fallback, nil
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	return fallback, ferr
 }
 
 func pack(hits []Hit, err error) (Result, error) {
@@ -148,6 +180,7 @@ func pack(hits []Hit, err error) (Result, error) {
 }
 
 func (c *Client) duck(ctx context.Context, query string) (Result, error) {
+	indexCtx, cancelIndex := context.WithTimeout(ctx, indexBudget(ctx))
 	var (
 		htmlHits []Hit
 		wikiHits []Hit
@@ -158,24 +191,28 @@ func (c *Client) duck(ctx context.Context, query string) (Result, error) {
 	group.Add(2)
 	go func() {
 		defer group.Done()
-		htmlHits, htmlErr = c.webIndex(ctx, query)
+		htmlHits, htmlErr = c.webIndex(indexCtx, query)
 	}()
 	go func() {
 		defer group.Done()
-		wikiHits, wikiErr = c.wiki(ctx, c.wikiZH, query)
+		wikiHits, wikiErr = c.wiki(indexCtx, c.wikiZH, query)
 	}()
 	group.Wait()
-	var first error
-	if htmlErr != nil {
-		first = htmlErr
-	} else if wikiErr != nil {
-		first = wikiErr
-	}
+	cancelIndex()
 	if len(wikiHits) > 2 {
 		wikiHits = wikiHits[:2]
 	}
+	indexTimedOut := errors.Is(htmlErr, context.DeadlineExceeded) && ctx.Err() == nil
+	var first error
+	if htmlErr != nil && !indexTimedOut {
+		first = htmlErr
+	} else if wikiErr != nil && ctx.Err() == nil && !errors.Is(wikiErr, context.DeadlineExceeded) {
+		first = wikiErr
+	}
 	hits := mergeHits(htmlHits, wikiHits)
-	if len(hits) < 2 && ctx.Err() == nil {
+	if len(htmlHits) == 0 && ctx.Err() == nil {
+		hits, first = c.fillFromEngines(ctx, query, hits, first)
+	} else if len(hits) < 2 && ctx.Err() == nil {
 		more, err := c.duckJSON(ctx, query)
 		if err != nil && first == nil {
 			first = err
@@ -190,6 +227,40 @@ func (c *Client) duck(ctx context.Context, query string) (Result, error) {
 		hits = mergeHits(hits, more)
 	}
 	return pack(hits, first)
+}
+
+// fillFromEngines 在网页索引没有结果时查询中文搜索引擎，并补一条即时答案。
+func (c *Client) fillFromEngines(ctx context.Context, query string, hits []Hit, first error) ([]Hit, error) {
+	var (
+		jsonHits   []Hit
+		engineHits []Hit
+		jsonErr    error
+		engineErr  error
+		group      sync.WaitGroup
+	)
+	needJSON := len(hits) < 2
+	if needJSON {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			jsonHits, jsonErr = c.duckJSON(ctx, query)
+		}()
+	}
+	group.Add(1)
+	go func() {
+		defer group.Done()
+		engineHits, engineErr = c.searchEngines(ctx, query)
+	}()
+	group.Wait()
+	if engineErr != nil {
+		first = engineErr
+	} else if jsonErr != nil && first == nil {
+		first = jsonErr
+	}
+	if len(engineHits) > 0 {
+		return mergeHits(engineHits, hits, jsonHits), first
+	}
+	return mergeHits(hits, jsonHits), first
 }
 
 func (c *Client) webIndex(ctx context.Context, query string) ([]Hit, error) {
@@ -243,7 +314,7 @@ func (c *Client) duckPage(ctx context.Context, endpoint, query string) ([]Hit, e
 	if challengePage(body) {
 		return nil, fmt.Errorf("检索服务要求验证")
 	}
-	return parseDuckHTML(body), nil
+	return tagEngine(parseDuckHTML(body), "DuckDuckGo"), nil
 }
 
 func challengePage(body string) bool {
@@ -266,7 +337,7 @@ func (c *Client) duckJSON(ctx context.Context, query string) ([]Hit, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseDuckJSON(raw), nil
+	return tagEngine(parseDuckJSON(raw), "DuckDuckGo"), nil
 }
 
 func (c *Client) wiki(ctx context.Context, endpoint, query string) ([]Hit, error) {
@@ -291,7 +362,7 @@ func (c *Client) wiki(ctx context.Context, endpoint, query string) ([]Hit, error
 	if err != nil {
 		return nil, err
 	}
-	return parseWiki(raw), nil
+	return tagEngine(parseWiki(raw), "维基百科"), nil
 }
 
 func (c *Client) bing(ctx context.Context, query string) ([]Hit, error) {
@@ -310,7 +381,7 @@ func (c *Client) bing(ctx context.Context, query string) ([]Hit, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseBing(raw), nil
+	return tagEngine(parseBing(raw), "必应"), nil
 }
 
 func (c *Client) tavily(ctx context.Context, query string) ([]Hit, error) {
@@ -333,7 +404,7 @@ func (c *Client) tavily(ctx context.Context, query string) ([]Hit, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseTavily(raw), nil
+	return tagEngine(parseTavily(raw), "Tavily"), nil
 }
 
 func (c *Client) do(req *http.Request) ([]byte, error) {
@@ -507,7 +578,10 @@ func (c *Client) pageHostOK(host string) bool {
 func (c *Client) hostAllowed(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	switch host {
-	case "html.duckduckgo.com", "lite.duckduckgo.com", "api.duckduckgo.com", "zh.wikipedia.org", "en.wikipedia.org", "api.bing.microsoft.com", "api.tavily.com":
+	case "html.duckduckgo.com", "lite.duckduckgo.com", "api.duckduckgo.com", "zh.wikipedia.org", "en.wikipedia.org",
+		"api.bing.microsoft.com", "www.bing.com", "cn.bing.com", "api.tavily.com",
+		"m.baidu.com", "www.baidu.com", "www.sogou.com", "sogou.com",
+		"m.so.com", "www.so.com", "so.toutiao.com":
 		return true
 	}
 	if c.permitLoopback && (host == "127.0.0.1" || host == "localhost" || host == "::1") {
