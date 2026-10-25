@@ -73,6 +73,32 @@ export function toggleWebSearch() {
   setWebSearch(!chat.webSearch)
 }
 
+export async function readSource(message, item) {
+  if (!message || !item?.url || item.reading) return
+  if (String(message.id).startsWith('tmp-')) {
+    item.readError = '回答还在准备，请稍后再读取'
+    item.detailOpen = true
+    return
+  }
+  item.reading = true
+  item.readError = ''
+  item.detailOpen = true
+  try {
+    const result = await post('/api/chat/source', {
+      message_id: String(message.id),
+      url: item.url,
+    })
+    const data = result.data || {}
+    if (data.excerpt) item.excerpt = data.excerpt
+    if (data.title && !item.title) item.title = data.title
+    if (!item.excerpt) item.readError = '这篇网页没有读到正文'
+  } catch (error) {
+    item.readError = error.message || '读取失败'
+  } finally {
+    item.reading = false
+  }
+}
+
 export function toggleTheme() {
   chat.theme = chat.theme === 'dark' ? 'light' : 'dark'
   document.documentElement.dataset.theme = chat.theme

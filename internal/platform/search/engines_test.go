@@ -37,6 +37,14 @@ func TestParseSearchEngines(t *testing.T) {
 	if len(sogou) != 2 || sogou[0].Engine != "搜狗" || sogou[0].URL != "http://sh.weather.com.cn/" || sogou[0].Title != "上海天气" || sogou[1].URL != "https://weatherol.cn/shanghai" || sogou[1].Snippet != "最高 26 度。" {
 		t.Fatalf("搜狗页面: %#v", sogou)
 	}
+	weixin, ok := acceptEngineHit("上海今日天气", "http://mp.weixin.qq.com/s?src=11&timestamp=179&ver=1", "公众号天气")
+	if !ok || !strings.Contains(weixin.URL, "&timestamp=") || strings.Contains(weixin.URL, "×") {
+		t.Fatalf("查询串里的 timestamp 不应被当成 HTML 实体: %#v", weixin)
+	}
+	amp, ok := acceptEngineHit("上海天气", "https://example.com/a?src=11&amp;timestamp=2", "编码过的链接")
+	if !ok || amp.URL != "https://example.com/a?src=11&timestamp=2" {
+		t.Fatalf("&amp; 应该还原成查询参数: %#v", amp)
+	}
 
 	so := parseSoHTML(`<div class="g-card res-list" data-pcurl="https://m.tianqi.com/shanghai/today/"><a href="https://m.so.com/jump?u=https%3A%2F%2Fm.tianqi.com%2Fshanghai%2Ftoday%2F"><h3 class="res-title"><em>上海今天天气</em>预报</h3><p class="g-main summary">今日晴，最高 26 度。</p></a></div>
 <div data-pcurl="https://m.so.com/s?q=weather"><h3 class="res-title">还是搜索页</h3></div>`)
@@ -64,7 +72,7 @@ func TestEnginesFillEmptyIndexAndStayIdleOtherwise(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/html/":
-			if r.URL.Query().Get("q") == "已有结果" {
+			if r.URL.Query().Get("q") == "已有结果" || r.URL.Query().Get("q") == "golang" {
 				io.WriteString(w, `<a class="result__a" href="https://example.com/go">Go</a><a class="result__snippet">编程语言</a>`)
 				return
 			}
@@ -145,15 +153,29 @@ func TestEnginesFillEmptyIndexAndStayIdleOtherwise(t *testing.T) {
 	}
 
 	before := engineCalls
-	kept, err := client.Search(context.Background(), "已有结果")
+	english, err := client.Search(context.Background(), "golang")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if kept.Hits[0].URL != "https://example.com/go" || kept.Hits[0].Engine != "DuckDuckGo" {
-		t.Fatalf("索引有结果时应该保留网页结果: %#v", kept.Hits)
+	if english.Hits[0].URL != "https://example.com/go" || english.Hits[0].Engine != "DuckDuckGo" {
+		t.Fatalf("英文问题应优先保留网页索引: %#v", english.Hits)
 	}
-	if engineCalls != before {
-		t.Fatalf("索引已有结果时不应该再请求搜索引擎: %d -> %d", before, engineCalls)
+	if !containsURL(english.Hits, "https://example.com/bing") {
+		t.Fatalf("英文索引有结果时仍应并入搜索引擎: %#v", english.Hits)
+	}
+	if engineCalls <= before {
+		t.Fatalf("搜索引擎应该和索引同时查询: %d -> %d", before, engineCalls)
+	}
+
+	chinese, err := client.Search(context.Background(), "已有结果")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chinese.Hits[0].URL != "https://example.com/bing" || chinese.Hits[0].Engine != "必应" {
+		t.Fatalf("中文问题应优先采用搜索引擎: %#v", chinese.Hits)
+	}
+	if !containsURL(chinese.Hits, "https://example.com/go") {
+		t.Fatalf("中文问题仍应保留网页索引: %#v", chinese.Hits)
 	}
 
 	client.provider = "bing"
@@ -222,6 +244,15 @@ func TestEngineHostsAreAllowed(t *testing.T) {
 	if err := client.allow(context.Background(), blocked.URL); err == nil {
 		t.Fatal("验证码域名不应该放进检索白名单")
 	}
+}
+
+func containsURL(hits []Hit, raw string) bool {
+	for _, hit := range hits {
+		if hit.URL == raw {
+			return true
+		}
+	}
+	return false
 }
 
 func pointEngines(client *Client, base string) {

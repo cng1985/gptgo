@@ -39,6 +39,17 @@ func (r *Router) Search(ctx context.Context, query string) (search.Result, error
 	return result, err
 }
 
+func (r *Router) Read(ctx context.Context, rawURL string) (search.Page, error) {
+	if r.web == nil {
+		return search.Page{}, fmt.Errorf("联网检索不可用")
+	}
+	page, err := r.web.Read(ctx, rawURL)
+	if err != nil && r.log != nil {
+		r.log.Warn("web page read failed", "err", errString(err))
+	}
+	return page, err
+}
+
 func (r *Router) Info() (string, bool) {
 	if r.useRemote("external") {
 		return "openai", true

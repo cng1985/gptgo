@@ -4,7 +4,7 @@ import ChartPanel from './ChartPanel.vue'
 import Icon from './Icon.vue'
 import SparkleMark from './SparkleMark.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
-import { chat, notify, send } from '../stores/chat'
+import { chat, notify, readSource, send } from '../stores/chat'
 import { renderMarkdown } from '../utils/markdown'
 
 const scroller = ref(null)
@@ -89,7 +89,7 @@ function sourceMeta(item) {
 function searchHeadline(message) {
   const query = String(message.searchQuery || '').trim()
   if (message.searchStatus === 'running') {
-    return query ? `正在检索「${query}」，并阅读靠前的网页` : '正在检索公开网页'
+    return query ? `正在检索「${query}」，必应、百度和中文搜索引擎一起查` : '正在检索公开网页'
   }
   if (message.searchStatus === 'empty' || message.searchStatus === 'error') {
     return query ? `没有检索到「${query}」的公开结果。` : '这次没有检索到可用的公开结果。'
@@ -97,7 +97,34 @@ function searchHeadline(message) {
   return query ? `联网检索 · ${query}` : '联网检索'
 }
 
-watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.searchStatus || ''}|${item.searchQuery || ''}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}|${(item.sources || []).map((source) => `${source.url || ''}:${source.snippet || ''}`).join(',')}|${(item.tools || []).map((tool) => `${tool.id}:${tool.status}:${tool.result || ''}`).join(',')}`).join('\n'), () => scrollIfNeeded())
+function toggleDetail(message, item) {
+  if (item.detailOpen) {
+    item.detailOpen = false
+    return
+  }
+  if (item.excerpt) {
+    item.detailOpen = true
+    return
+  }
+  readSource(message, item)
+}
+
+function detailLabel(item) {
+  if (item.reading) return '正在读取…'
+  if (item.excerpt && !item.detailOpen) return '查看明细'
+  if (item.excerpt) return '重新读取'
+  return '读取明细'
+}
+
+function openDetail(message, item) {
+  if (item.excerpt && !item.detailOpen) {
+    item.detailOpen = true
+    return
+  }
+  readSource(message, item)
+}
+
+watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.searchStatus || ''}|${item.searchQuery || ''}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}|${(item.sources || []).map((source) => `${source.url || ''}:${source.snippet || ''}:${source.excerpt || ''}:${source.detailOpen ? 1 : 0}:${source.reading ? 1 : 0}`).join(',')}|${(item.tools || []).map((tool) => `${tool.id}:${tool.status}:${tool.result || ''}`).join(',')}`).join('\n'), () => scrollIfNeeded())
 onMounted(() => scrollIfNeeded(true))
 </script>
 
@@ -119,19 +146,24 @@ onMounted(() => scrollIfNeeded(true))
             <span>{{ searchHeadline(message) }}</span>
           </div>
           <template v-if="message.searchStatus !== 'running' && message.searchStatus !== 'empty' && message.searchStatus !== 'error'">
-            <component
-              :is="safeLink(item.url) ? 'a' : 'div'"
-              v-for="(item, index) in message.sources"
-              :key="item.url || index"
-              class="search-hit"
-              :href="safeLink(item.url) || undefined"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span class="search-hit-title">{{ item.title || item.url || '来源' }}</span>
-              <span v-if="sourceMeta(item)" class="search-hit-meta">{{ sourceMeta(item) }}</span>
-              <span v-if="sourceText(item)" class="search-hit-snippet">{{ sourceText(item) }}</span>
-            </component>
+            <p v-if="message.sources?.length" class="search-hint">摘要里没有答案时，点「读取明细」打开网页正文。</p>
+            <div v-for="(item, index) in message.sources" :key="item.url || index" class="search-hit">
+              <button type="button" class="search-hit-main" :aria-expanded="item.detailOpen ? 'true' : 'false'" @click="toggleDetail(message, item)">
+                <span class="search-hit-title">{{ item.title || item.url || '来源' }}</span>
+                <span v-if="sourceMeta(item)" class="search-hit-meta">{{ sourceMeta(item) }}</span>
+                <span v-if="sourceText(item)" class="search-hit-snippet">{{ sourceText(item) }}</span>
+              </button>
+              <div class="search-hit-actions">
+                <button type="button" @click="openDetail(message, item)">{{ detailLabel(item) }}</button>
+                <a v-if="safeLink(item.url)" :href="safeLink(item.url)" target="_blank" rel="noopener noreferrer">打开原页</a>
+              </div>
+              <div v-if="item.detailOpen" class="search-hit-detail">
+                <p v-if="item.reading">正在打开这篇网页…</p>
+                <p v-else-if="item.readError">{{ item.readError }}</p>
+                <p v-else-if="item.excerpt">{{ item.excerpt }}</p>
+                <p v-else>这篇网页还没有读到正文。</p>
+              </div>
+            </div>
           </template>
         </div>
         <div v-if="message.role === 'assistant' && message.thinking" class="thinking">

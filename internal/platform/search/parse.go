@@ -42,7 +42,7 @@ func parseDuckHTML(body string) []Hit {
 		}
 		href := ""
 		if match := hrefAttr.FindStringSubmatch(anchor); len(match) > 1 {
-			href = html.UnescapeString(match[1])
+			href = unescapeURL(match[1])
 		}
 		title := ""
 		lower := strings.ToLower(anchor)
@@ -203,7 +203,7 @@ func cleanHit(title, rawURL, snippet string) (Hit, bool) {
 }
 
 func cleanURL(raw string) (string, bool) {
-	raw = strings.TrimSpace(html.UnescapeString(raw))
+	raw = strings.TrimSpace(unescapeURL(raw))
 	raw = unwrapDuck(raw)
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Host == "" || parsed.User != nil {
@@ -228,6 +228,18 @@ func cleanURL(raw string) (string, bool) {
 		return "", false
 	}
 	return link, true
+}
+
+// unescapeURL 只还原 &amp;。完整的 HTML 反转义会把查询串里的 &timestamp 吃成乘号。
+func unescapeURL(raw string) string {
+	for {
+		lower := strings.ToLower(raw)
+		i := strings.Index(lower, "&amp;")
+		if i < 0 {
+			return raw
+		}
+		raw = raw[:i] + "&" + raw[i+5:]
+	}
 }
 
 func unwrapDuck(raw string) string {
@@ -327,7 +339,7 @@ func parseBingHTML(body string) []Hit {
 	locs := bingTitle.FindAllStringSubmatchIndex(body, 8)
 	hits := make([]Hit, 0, len(locs))
 	for _, loc := range locs {
-		rawURL := html.UnescapeString(body[loc[2]:loc[3]])
+		rawURL := unescapeURL(body[loc[2]:loc[3]])
 		title := body[loc[4]:loc[5]]
 		window := after(body, loc[1], 700)
 		snippet := ""
@@ -413,7 +425,7 @@ func parseSoHTML(body string) []Hit {
 		if end < 0 {
 			break
 		}
-		rawURL := html.UnescapeString(rest[:end])
+		rawURL := unescapeURL(rest[:end])
 		window := rest[end:]
 		if len(window) > 2000 {
 			window = window[:2000]
@@ -509,7 +521,7 @@ func attrLoose(tag, name string) string {
 	}
 	for _, part := range match[1:] {
 		if part != "" {
-			return html.UnescapeString(part)
+			return unescapeURL(part)
 		}
 	}
 	return ""

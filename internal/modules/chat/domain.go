@@ -144,6 +144,20 @@ type ChatCompleteResponse struct {
 	Status         string `json:"status"`
 }
 
+type SourceReadRequest struct {
+	MessageID int64  `json:"message_id,string"`
+	URL       string `json:"url"`
+}
+
+type SourceReadResponse struct {
+	MessageID int64  `json:"message_id,string"`
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	Snippet   string `json:"snippet,omitempty"`
+	Excerpt   string `json:"excerpt"`
+	Engine    string `json:"engine,omitempty"`
+}
+
 type ChatOptimizeRequest struct {
 	Content string `json:"content"`
 	Model   string `json:"model"`

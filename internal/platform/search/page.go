@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html"
 	"mime"
 	"net/http"
@@ -13,13 +14,24 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 const (
 	pageReadLimit = 3
 	pageBytes     = 512 << 10
 	pageExcerpt   = 480
+	detailExcerpt = 1600
 )
+
+// Page 是按用户点开的一条检索结果读到的正文。
+type Page struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Excerpt string `json:"excerpt"`
+}
 
 var (
 	hiddenBlocks = []*regexp.Regexp{
@@ -91,24 +103,52 @@ func hostOf(raw string) string {
 	return parsed.Hostname()
 }
 
+// Read 读取用户点开的一条公开结果页，返回比自动摘录更长的正文。
+func (c *Client) Read(ctx context.Context, rawURL string) (Page, error) {
+	link, ok := cleanURL(rawURL)
+	if !ok || c == nil {
+		return Page{}, fmt.Errorf("地址不可访问")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	text, title, err := c.readDocument(ctx, link, detailExcerpt)
+	if err != nil {
+		return Page{}, err
+	}
+	text = clip(text, detailExcerpt)
+	if utf8.RuneCountInString(text) < 40 {
+		return Page{}, fmt.Errorf("网页里没有读到正文")
+	}
+	if title == "" {
+		title = clip(text, 40)
+	}
+	return Page{Title: title, URL: link, Excerpt: text}, nil
+}
+
 func (c *Client) readPage(ctx context.Context, rawURL string) (string, error) {
+	text, _, err := c.readDocument(ctx, rawURL, pageExcerpt)
+	return text, err
+}
+
+func (c *Client) readDocument(ctx context.Context, rawURL string, limit int) (string, string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,text/plain;q=0.8")
-	raw, _, err := c.roundTrip(req, fetchPage, pageBytes)
+	raw, ctype, err := c.roundTrip(req, fetchPage, pageBytes)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if !utf8.Valid(raw) {
-		return "", errUnreadable
+	decoded, err := decodeBody(raw, ctype)
+	if err != nil {
+		return "", "", err
 	}
-	return readableText(string(raw)), nil
+	return readableText(decoded, limit), pageTitle(decoded), nil
 }
 
 var errUnreadable = errors.New("不是可阅读的网页")
@@ -131,18 +171,84 @@ func pageTypeOK(ctype string) bool {
 }
 
 func charsetOK(charset string) bool {
-	charset = strings.ToLower(strings.TrimSpace(charset))
-	switch charset {
-	case "", "utf-8", "utf8", "us-ascii":
+	switch normalizeCharset(charset) {
+	case "", "utf-8", "utf8", "us-ascii", "gbk", "gb2312", "gb18030":
 		return true
 	default:
 		return false
 	}
 }
 
-func readableText(raw string) string {
+func normalizeCharset(charset string) string {
+	return strings.ToLower(strings.TrimSpace(charset))
+}
+
+var metaCharsetPattern = regexp.MustCompile(`(?i)charset\s*=\s*["']?\s*([a-z0-9._-]+)`)
+var titleTag = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+
+func decodeBody(raw []byte, ctype string) (string, error) {
+	charset := normalizeCharset(charsetFrom(ctype))
+	if charset == "" {
+		charset = metaCharsetOf(raw)
+	}
+	switch charset {
+	case "gbk", "gb2312", "gb18030":
+		return decodeGBK(raw)
+	case "", "utf-8", "utf8", "us-ascii":
+		if utf8.Valid(raw) {
+			return string(raw), nil
+		}
+		if text, err := decodeGBK(raw); err == nil {
+			return text, nil
+		}
+		return "", errUnreadable
+	default:
+		return "", errUnreadable
+	}
+}
+
+func charsetFrom(ctype string) string {
+	_, params, err := mime.ParseMediaType(strings.TrimSpace(ctype))
+	if err != nil {
+		return ""
+	}
+	return params["charset"]
+}
+
+func metaCharsetOf(raw []byte) string {
+	head := raw
+	if len(head) > 4096 {
+		head = head[:4096]
+	}
+	match := metaCharsetPattern.FindSubmatch(head)
+	if len(match) < 2 {
+		return ""
+	}
+	return normalizeCharset(string(match[1]))
+}
+
+func decodeGBK(raw []byte) (string, error) {
+	decoded, _, err := transform.Bytes(simplifiedchinese.GB18030.NewDecoder(), raw)
+	if err != nil || !utf8.Valid(decoded) {
+		return "", errUnreadable
+	}
+	return string(decoded), nil
+}
+
+func pageTitle(raw string) string {
+	match := titleTag.FindStringSubmatch(raw)
+	if len(match) < 2 {
+		return ""
+	}
+	return clip(stripTags(match[1]), 120)
+}
+
+func readableText(raw string, limit int) string {
 	if !utf8.ValidString(raw) {
 		return ""
+	}
+	if limit <= 0 {
+		limit = pageExcerpt
 	}
 	for _, pattern := range hiddenBlocks {
 		raw = pattern.ReplaceAllString(raw, "\n")
@@ -150,15 +256,20 @@ func readableText(raw string) string {
 	raw = blockEnd.ReplaceAllString(raw, "\n")
 	text := stripTagsPreserveLines(raw)
 	var kept []string
+	seen := map[string]struct{}{}
 	total := 0
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.Join(strings.Fields(line), " ")
-		if utf8.RuneCountInString(line) < 18 {
+		if utf8.RuneCountInString(line) < 18 || noiseLine(line) {
 			continue
 		}
+		if _, ok := seen[line]; ok {
+			continue
+		}
+		seen[line] = struct{}{}
 		kept = append(kept, line)
 		total += utf8.RuneCountInString(line)
-		if total >= pageExcerpt+40 {
+		if total >= limit {
 			break
 		}
 	}
@@ -247,6 +358,16 @@ func containsTerm(line string, terms []string) bool {
 
 func hasMeasure(line string) bool {
 	return strings.Contains(line, "℃") || strings.Contains(line, "°") || strings.Contains(line, "%") || strings.Contains(line, "度") || strings.Contains(line, "级")
+}
+
+func noiseLine(line string) bool {
+	if boilerplateLine(line) {
+		return true
+	}
+	if strings.Contains(line, "当前位置") && strings.Contains(line, "首页") {
+		return true
+	}
+	return false
 }
 
 func boilerplateLine(line string) bool {

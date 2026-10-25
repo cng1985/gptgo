@@ -182,13 +182,16 @@ func pack(hits []Hit, err error) (Result, error) {
 func (c *Client) duck(ctx context.Context, query string) (Result, error) {
 	indexCtx, cancelIndex := context.WithTimeout(ctx, indexBudget(ctx))
 	var (
-		htmlHits []Hit
-		wikiHits []Hit
-		htmlErr  error
-		wikiErr  error
-		group    sync.WaitGroup
+		htmlHits   []Hit
+		wikiHits   []Hit
+		engineHits []Hit
+		htmlErr    error
+		wikiErr    error
+		engineErr  error
+		group      sync.WaitGroup
 	)
-	group.Add(2)
+	// 网页索引和中文搜索引擎一起查。索引经常只给过期摘要，不能因此跳过百度、必应。
+	group.Add(3)
 	go func() {
 		defer group.Done()
 		htmlHits, htmlErr = c.webIndex(indexCtx, query)
@@ -197,70 +200,58 @@ func (c *Client) duck(ctx context.Context, query string) (Result, error) {
 		defer group.Done()
 		wikiHits, wikiErr = c.wiki(indexCtx, c.wikiZH, query)
 	}()
-	group.Wait()
-	cancelIndex()
-	if len(wikiHits) > 2 {
-		wikiHits = wikiHits[:2]
-	}
-	indexTimedOut := errors.Is(htmlErr, context.DeadlineExceeded) && ctx.Err() == nil
-	var first error
-	if htmlErr != nil && !indexTimedOut {
-		first = htmlErr
-	} else if wikiErr != nil && ctx.Err() == nil && !errors.Is(wikiErr, context.DeadlineExceeded) {
-		first = wikiErr
-	}
-	hits := mergeHits(htmlHits, wikiHits)
-	if len(htmlHits) == 0 && ctx.Err() == nil {
-		hits, first = c.fillFromEngines(ctx, query, hits, first)
-	} else if len(hits) < 2 && ctx.Err() == nil {
-		more, err := c.duckJSON(ctx, query)
-		if err != nil && first == nil {
-			first = err
-		}
-		hits = mergeHits(hits, more)
-	}
-	if len(hits) == 0 && !hasHan(query) && ctx.Err() == nil {
-		more, err := c.wiki(ctx, c.wikiEN, query)
-		if err != nil && first == nil {
-			first = err
-		}
-		hits = mergeHits(hits, more)
-	}
-	return pack(hits, first)
-}
-
-// fillFromEngines 在网页索引没有结果时查询中文搜索引擎，并补一条即时答案。
-func (c *Client) fillFromEngines(ctx context.Context, query string, hits []Hit, first error) ([]Hit, error) {
-	var (
-		jsonHits   []Hit
-		engineHits []Hit
-		jsonErr    error
-		engineErr  error
-		group      sync.WaitGroup
-	)
-	needJSON := len(hits) < 2
-	if needJSON {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			jsonHits, jsonErr = c.duckJSON(ctx, query)
-		}()
-	}
-	group.Add(1)
 	go func() {
 		defer group.Done()
 		engineHits, engineErr = c.searchEngines(ctx, query)
 	}()
 	group.Wait()
-	if engineErr != nil {
-		first = engineErr
-	} else if jsonErr != nil && first == nil {
-		first = jsonErr
+	cancelIndex()
+	if len(wikiHits) > 2 {
+		wikiHits = wikiHits[:2]
 	}
-	if len(engineHits) > 0 {
-		return mergeHits(engineHits, hits, jsonHits), first
+	var hits []Hit
+	if hasHan(query) && len(engineHits) > 0 {
+		hits = mergeHits(engineHits, htmlHits, wikiHits)
+	} else {
+		hits = mergeHits(htmlHits, engineHits, wikiHits)
 	}
-	return mergeHits(hits, jsonHits), first
+	var jsonErr error
+	if len(hits) < 2 && ctx.Err() == nil {
+		var more []Hit
+		more, jsonErr = c.duckJSON(ctx, query)
+		hits = mergeHits(hits, more)
+	}
+	var enErr error
+	if len(hits) == 0 && !hasHan(query) && ctx.Err() == nil {
+		var more []Hit
+		more, enErr = c.wiki(ctx, c.wikiEN, query)
+		hits = mergeHits(hits, more)
+	}
+	if err := ctx.Err(); err != nil && len(hits) == 0 {
+		return Result{}, err
+	}
+	if len(hits) > 0 {
+		return pack(hits, nil)
+	}
+	return pack(hits, pickSearchErr(htmlErr, engineErr, wikiErr, jsonErr, enErr))
+}
+
+// pickSearchErr 在完全没有结果时挑一个能说明原因的错误。索引超时让路给搜索引擎的错误。
+func pickSearchErr(errs ...error) error {
+	var timedOut error
+	for _, err := range errs {
+		if err == nil || errors.Is(err, context.Canceled) {
+			continue
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			if timedOut == nil {
+				timedOut = err
+			}
+			continue
+		}
+		return err
+	}
+	return timedOut
 }
 
 func (c *Client) webIndex(ctx context.Context, query string) ([]Hit, error) {
