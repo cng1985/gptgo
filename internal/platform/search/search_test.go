@@ -326,6 +326,84 @@ func TestFocusExcerptStopsAtUnrelatedLines(t *testing.T) {
 	}
 }
 
+func TestFocusExcerptKeepsMeasureWhenTitleMatches(t *testing.T) {
+	text := "网站导航和热门推荐\n阴 19℃ 北风 2级 湿度 68%\n宫保鸡丁的家常做法和配料表"
+	got := focusExcerpt("上海今天天气", "上海天气预报", text)
+	if !strings.Contains(got, "19℃") || !strings.Contains(got, "68%") || strings.Contains(got, "宫保鸡丁") {
+		t.Fatalf("标题已经对上时应该留下温度: %q", got)
+	}
+}
+
+func TestReadableTextJoinsShortForecastLines(t *testing.T) {
+	raw := `<h1>25日（今天）</h1><p class="wea">阴</p><p class="tem"><i>19℃</i></p><p class="win"><i>北风 2级</i></p><p>湿度 68%</p>`
+	got := readableText(raw, detailExcerpt)
+	if !strings.Contains(got, "19℃") || !strings.Contains(got, "北风 2级") || !strings.Contains(got, "68%") {
+		t.Fatalf("短句应该拼成一条预报: %q", got)
+	}
+}
+
+func TestDigFollowsRedirectAndNextLink(t *testing.T) {
+	var secret, fact int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		switch r.URL.Path {
+		case "/jump":
+			io.WriteString(w, `<script>window.location.replace("/fact")</script><noscript><meta http-equiv="refresh" content="0;URL='/fact'"></noscript>`)
+		case "/shell":
+			io.WriteString(w, `<html><title>结果列表</title><a href="/fact">上海今天天气</a><a href="/secret">上海今天天气内网</a></html>`)
+		case "/secret":
+			secret++
+			http.Redirect(w, r, "http://10.1.2.3/hidden", http.StatusFound)
+		case "/fact":
+			fact++
+			io.WriteString(w, `<html><title>上海天气</title><p>阴</p><p>19℃</p><p>北风 2级</p><p>湿度 68%</p></html>`)
+		case "/empty":
+			io.WriteString(w, `<html><title>空页面</title><p>没有正文</p></html>`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := testClient(server.URL)
+	client.fetchPages = true
+	hits := []Hit{
+		{Title: "跳转", URL: server.URL + "/jump", Snippet: "上海"},
+		{Title: "空", URL: server.URL + "/empty", Snippet: "没有"},
+	}
+	client.enrich(context.Background(), "上海今天天气", hits)
+	if fact == 0 || !strings.Contains(hits[0].Excerpt, "19℃") || !strings.Contains(hits[0].URL, "/fact") {
+		t.Fatalf("应该跟着跳转读到温度: fact=%d %#v", fact, hits)
+	}
+
+	shell := []Hit{{Title: "列表", URL: server.URL + "/shell", Snippet: "短"}}
+	client.enrich(context.Background(), "上海今天天气", shell)
+	if secret != 0 {
+		t.Fatalf("内网链接不应该被打开: %d", secret)
+	}
+	if !strings.Contains(shell[0].Excerpt, "19℃") || !strings.Contains(shell[0].URL, "/fact") {
+		t.Fatalf("列表页没有答案时应该点开匹配的链接: %#v", shell[0])
+	}
+
+	second := []Hit{
+		{Title: "空页面", URL: server.URL + "/empty", Snippet: "无"},
+		{Title: "上海天气", URL: server.URL + "/fact", Snippet: "短"},
+	}
+	client.enrich(context.Background(), "上海今天天气", second)
+	if !strings.Contains(second[0].Excerpt, "19℃") && !containsExcerpt(second, "19℃") {
+		t.Fatalf("第一条没有正文时应该继续读下一条: %#v", second)
+	}
+}
+
+func containsExcerpt(hits []Hit, text string) bool {
+	for _, hit := range hits {
+		if strings.Contains(hit.Excerpt, text) {
+			return true
+		}
+	}
+	return false
+}
+
 func testClient(base string) *Client {
 	client := &Client{
 		provider:       "duckduckgo",

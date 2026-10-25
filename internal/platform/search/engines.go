@@ -56,6 +56,9 @@ func (c *Client) engineJobs() []engineJob {
 	if strings.TrimSpace(c.toutiaoURL) != "" {
 		jobs = append(jobs, engineJob{run: c.toutiaoSearch})
 	}
+	if strings.TrimSpace(c.weixinURL) != "" {
+		jobs = append(jobs, engineJob{run: c.weixinSearch})
+	}
 	return jobs
 }
 
@@ -66,23 +69,15 @@ func (c *Client) searchEngines(ctx context.Context, query string) ([]Hit, error)
 	}
 	found := make([][]Hit, len(jobs))
 	errs := make([]error, len(jobs))
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	var mu sync.Mutex
+	// 单个引擎先返回时不取消其他引擎。百度经常是验证页，头条又很大，取消会把必应、搜狗的真实链接一起丢掉。
 	var group sync.WaitGroup
 	for i, job := range jobs {
 		group.Add(1)
 		go func(i int, job engineJob) {
 			defer group.Done()
 			hits, err := job.run(ctx, query)
-			mu.Lock()
 			found[i] = hits
 			errs[i] = err
-			enough := len(mergeHits(found...)) >= 5
-			mu.Unlock()
-			if enough {
-				cancel()
-			}
 		}(i, job)
 	}
 	group.Wait()
@@ -146,6 +141,17 @@ func (c *Client) toutiaoSearch(ctx context.Context, query string) ([]Hit, error)
 		return nil, err
 	}
 	return parseToutiaoHTML(body), nil
+}
+
+func (c *Client) weixinSearch(ctx context.Context, query string) ([]Hit, error) {
+	body, err := c.engineGet(ctx, c.weixinURL, url.Values{
+		"type":  {"2"},
+		"query": {query},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parseWeixinHTML(body), nil
 }
 
 func (c *Client) engineGet(ctx context.Context, endpoint string, values url.Values) (string, error) {

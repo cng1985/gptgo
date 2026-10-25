@@ -76,7 +76,7 @@ function hostOf(url) {
 }
 
 function sourceText(item) {
-  return String(item?.snippet || item?.excerpt || '').trim()
+  return String(item?.excerpt || item?.snippet || '').trim()
 }
 
 function sourceMeta(item) {
@@ -89,7 +89,7 @@ function sourceMeta(item) {
 function searchHeadline(message) {
   const query = String(message.searchQuery || '').trim()
   if (message.searchStatus === 'running') {
-    return query ? `正在检索「${query}」，必应、百度和中文搜索引擎一起查` : '正在检索公开网页'
+    return query ? `正在检索「${query}」，并打开结果页读取正文` : '正在检索公开网页，并打开结果页'
   }
   if (message.searchStatus === 'empty' || message.searchStatus === 'error') {
     return query ? `没有检索到「${query}」的公开结果。` : '这次没有检索到可用的公开结果。'
@@ -146,7 +146,7 @@ onMounted(() => scrollIfNeeded(true))
             <span>{{ searchHeadline(message) }}</span>
           </div>
           <template v-if="message.searchStatus !== 'running' && message.searchStatus !== 'empty' && message.searchStatus !== 'error'">
-            <p v-if="message.sources?.length" class="search-hint">摘要里没有答案时，点「读取明细」打开网页正文。</p>
+            <p v-if="message.sources?.length" class="search-hint">摘要不够时会自动打开结果链接；点「读取明细」可以再读一次更长正文。</p>
             <div v-for="(item, index) in message.sources" :key="item.url || index" class="search-hit">
               <button type="button" class="search-hit-main" :aria-expanded="item.detailOpen ? 'true' : 'false'" @click="toggleDetail(message, item)">
                 <span class="search-hit-title">{{ item.title || item.url || '来源' }}</span>

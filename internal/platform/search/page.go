@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -20,7 +19,6 @@ import (
 )
 
 const (
-	pageReadLimit = 3
 	pageBytes     = 512 << 10
 	pageExcerpt   = 480
 	detailExcerpt = 1600
@@ -46,61 +44,11 @@ var (
 		regexp.MustCompile(`(?is)<aside\b[^>]*>.*?</aside>`),
 		regexp.MustCompile(`(?is)<form\b[^>]*>.*?</form>`),
 	}
-	blockEnd = regexp.MustCompile(`(?i)</(?:p|div|li|tr|h[1-6]|section|article)\s*>|<br\s*/?>`)
+	blockEnd = regexp.MustCompile(`(?i)</(?:p|div|li|tr|dd|dt|h[1-6]|section|article)\s*>|<br\s*/?>`)
 )
 
 func (c *Client) enrich(ctx context.Context, query string, hits []Hit) {
-	if c == nil || !c.fetchPages || len(hits) == 0 || ctx.Err() != nil {
-		return
-	}
-	indexes := pageIndexes(hits)
-	var group sync.WaitGroup
-	for _, index := range indexes {
-		group.Add(1)
-		go func(index int) {
-			defer group.Done()
-			pageCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-			defer cancel()
-			text, err := c.readPage(pageCtx, hits[index].URL)
-			if err != nil {
-				return
-			}
-			text = focusExcerpt(query, hits[index].Title, text)
-			if utf8.RuneCountInString(text) < 40 {
-				return
-			}
-			hits[index].Excerpt = clip(text, pageExcerpt)
-		}(index)
-	}
-	group.Wait()
-}
-
-func pageIndexes(hits []Hit) []int {
-	seen := map[string]struct{}{}
-	indexes := make([]int, 0, pageReadLimit)
-	for i, hit := range hits {
-		host := strings.ToLower(hostOf(hit.URL))
-		if host == "" {
-			continue
-		}
-		if _, ok := seen[host]; ok {
-			continue
-		}
-		seen[host] = struct{}{}
-		indexes = append(indexes, i)
-		if len(indexes) == pageReadLimit {
-			break
-		}
-	}
-	return indexes
-}
-
-func hostOf(raw string) string {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	return parsed.Hostname()
+	c.dig(ctx, query, hits)
 }
 
 // Read 读取用户点开的一条公开结果页，返回比自动摘录更长的正文。
@@ -131,6 +79,14 @@ func (c *Client) readPage(ctx context.Context, rawURL string) (string, error) {
 }
 
 func (c *Client) readDocument(ctx context.Context, rawURL string, limit int) (string, string, error) {
+	doc, err := c.browse(ctx, rawURL, limit, "")
+	if err != nil {
+		return "", "", err
+	}
+	return doc.text, doc.title, nil
+}
+
+func (c *Client) fetchHTML(ctx context.Context, rawURL string) (string, string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return "", "", err
@@ -148,7 +104,7 @@ func (c *Client) readDocument(ctx context.Context, rawURL string, limit int) (st
 	if err != nil {
 		return "", "", err
 	}
-	return readableText(decoded, limit), pageTitle(decoded), nil
+	return decoded, pageTitle(decoded), nil
 }
 
 var errUnreadable = errors.New("不是可阅读的网页")
@@ -250,30 +206,73 @@ func readableText(raw string, limit int) string {
 	if limit <= 0 {
 		limit = pageExcerpt
 	}
+	raw = htmlComment.ReplaceAllString(raw, "\n")
 	for _, pattern := range hiddenBlocks {
 		raw = pattern.ReplaceAllString(raw, "\n")
 	}
 	raw = blockEnd.ReplaceAllString(raw, "\n")
 	text := stripTagsPreserveLines(raw)
 	var kept []string
+	var pending []string
+	pendingRunes := 0
 	seen := map[string]struct{}{}
 	total := 0
+	flush := func() {
+		if len(pending) == 0 {
+			return
+		}
+		line := strings.Join(pending, " ")
+		pending = nil
+		pendingRunes = 0
+		if !keepReadable(line, seen, &kept, &total, limit) {
+			return
+		}
+	}
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.Join(strings.Fields(line), " ")
-		if utf8.RuneCountInString(line) < 18 || noiseLine(line) {
+		if line == "" {
+			flush()
 			continue
 		}
-		if _, ok := seen[line]; ok {
+		if noiseLine(line) {
 			continue
 		}
-		seen[line] = struct{}{}
-		kept = append(kept, line)
-		total += utf8.RuneCountInString(line)
-		if total >= limit {
+		runes := utf8.RuneCountInString(line)
+		if runes < 18 {
+			pending = append(pending, line)
+			pendingRunes += runes
+			if pendingRunes >= 18 {
+				flush()
+			}
+			continue
+		}
+		flush()
+		if !keepReadable(line, seen, &kept, &total, limit) {
 			break
 		}
 	}
+	flush()
 	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+func keepReadable(line string, seen map[string]struct{}, kept *[]string, total *int, limit int) bool {
+	if *total >= limit {
+		return false
+	}
+	if noiseLine(line) {
+		return true
+	}
+	runes := utf8.RuneCountInString(line)
+	if runes < 8 && !hasMeasure(line) {
+		return true
+	}
+	if _, ok := seen[line]; ok {
+		return true
+	}
+	seen[line] = struct{}{}
+	*kept = append(*kept, line)
+	*total += runes
+	return *total < limit
 }
 
 func focusExcerpt(query, title, text string) string {
@@ -281,18 +280,20 @@ func focusExcerpt(query, title, text string) string {
 	if len(terms) == 0 {
 		return strings.TrimSpace(text)
 	}
+	armed := containsTerm(title, terms)
 	var kept []string
 	started := false
 	total := 0
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.Join(strings.Fields(line), " ")
-		if line == "" || boilerplateLine(line) {
+		if line == "" || boilerplateLine(line) || noiseLine(line) {
 			continue
 		}
-		if !relevantLine(line, terms, started) {
-			if started {
-				break
-			}
+		keep, stop := scoreLine(line, terms, started, armed)
+		if stop {
+			break
+		}
+		if !keep {
 			continue
 		}
 		started = true
@@ -303,6 +304,35 @@ func focusExcerpt(query, title, text string) string {
 		}
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+func scoreLine(line string, terms []string, started, armed bool) (bool, bool) {
+	if chromeLine(line) {
+		return false, false
+	}
+	if containsTerm(line, terms) || (hasMeasure(line) && (started || armed)) {
+		return true, false
+	}
+	if started {
+		return false, true
+	}
+	return false, false
+}
+
+func chromeLine(line string) bool {
+	if hasMeasure(line) {
+		return false
+	}
+	hits := 0
+	for _, word := range []string{"首页", "登录", "注册", "预报", "预警", "雷达", "云图", "天气地图", "专业产品", "下载", "客户端", "网站地图", "热门推荐"} {
+		if strings.Contains(line, word) {
+			hits++
+		}
+	}
+	if hits >= 2 {
+		return true
+	}
+	return hits == 1 && utf8.RuneCountInString(line) <= 12
 }
 
 func queryTerms(query, title string) []string {
@@ -338,13 +368,6 @@ func splitTerms(text string) []string {
 	return strings.FieldsFunc(text, func(r rune) bool {
 		return unicode.IsSpace(r) || unicode.IsPunct(r) || r == '【' || r == '】' || r == '_' || r == '|'
 	})
-}
-
-func relevantLine(line string, terms []string, started bool) bool {
-	if containsTerm(line, terms) {
-		return true
-	}
-	return started && hasMeasure(line)
 }
 
 func containsTerm(line string, terms []string) bool {

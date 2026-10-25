@@ -33,9 +33,25 @@ func TestParseSearchEngines(t *testing.T) {
 
 	sogou := parseSogouHTML(`<h3 class="vr-title "><a href="/link?url=abc" linkurl=http://sh.weather.com.cn/ ><em><!--red_beg-->上海天气<!--red_end--></em></a></h3><p class="star-wiki text-default">中国天气网，今日晴。</p>
 <h3 class="vr-title"><a href="https://weatherol.cn/shanghai">上海一周天气</a></h3><p class="fz-mid space-txt">最高 26 度。</p>
-<h3 class="vr-title"><a href="/link?url=only-redirect">没有真实地址</a></h3>`)
-	if len(sogou) != 2 || sogou[0].Engine != "搜狗" || sogou[0].URL != "http://sh.weather.com.cn/" || sogou[0].Title != "上海天气" || sogou[1].URL != "https://weatherol.cn/shanghai" || sogou[1].Snippet != "最高 26 度。" {
+<h3 class="vr-title"><a href="/link?url=only-redirect">上海逐小时天气</a></h3>`)
+	if len(sogou) != 3 || sogou[0].Engine != "搜狗" || sogou[0].URL != "http://sh.weather.com.cn/" || sogou[0].Title != "上海天气" || sogou[1].URL != "https://weatherol.cn/shanghai" || sogou[1].Snippet != "最高 26 度。" {
 		t.Fatalf("搜狗页面: %#v", sogou)
+	}
+	if sogou[2].URL != "https://www.sogou.com/link?url=only-redirect" || sogou[2].Title != "上海逐小时天气" {
+		t.Fatalf("搜狗跳转链接应该保留，方便再打开: %#v", sogou[2])
+	}
+	baiduLink := parseBaiduHTML(`<a href="https://www.baidu.com/link?url=abc">上海今天天气</a>`)
+	if len(baiduLink) != 1 || baiduLink[0].Engine != "百度" || baiduLink[0].URL != "https://www.baidu.com/link?url=abc" || baiduLink[0].Title != "上海今天天气" {
+		t.Fatalf("百度跳转链接: %#v", baiduLink)
+	}
+	wechat := parseWeixinHTML(`<div class="txt-box"><h3><a href="/link?url=abc&amp;type=2&amp;query=%E5%A4%A9%E6%B0%94">上海今天天气</a></h3><p class="txt-info">最高 22℃，北风 2 级。</p></div>
+<h3><a href="/web?query=weather">不是文章</a></h3>`)
+	if len(wechat) != 1 || wechat[0].Engine != "微信搜索" || wechat[0].Title != "上海今天天气" || !strings.Contains(wechat[0].Snippet, "22℃") || !strings.Contains(wechat[0].URL, "https://weixin.sogou.com/link?url=abc") || !strings.Contains(wechat[0].URL, "type=2") {
+		t.Fatalf("微信搜索: %#v", wechat)
+	}
+	toutiaoArticle := parseToutiaoHTML(`{"emphasized":{"summary_text":"最高 22 度，北风 2 级。","title":"\u003cem\u003e上海今天天气\u003c/em\u003e"},"abstract":"上海市今天阴，最高 22 度。","article_url":"https:\/\/toutiao.com\/group\/7700\/"}`)
+	if len(toutiaoArticle) != 1 || toutiaoArticle[0].Engine != "头条搜索" || toutiaoArticle[0].URL != "https://toutiao.com/group/7700/" || toutiaoArticle[0].Title != "上海今天天气" || !strings.Contains(toutiaoArticle[0].Snippet, "22 度") {
+		t.Fatalf("头条文章地址: %#v", toutiaoArticle)
 	}
 	weixin, ok := acceptEngineHit("上海今日天气", "http://mp.weixin.qq.com/s?src=11&timestamp=179&ver=1", "公众号天气")
 	if !ok || !strings.Contains(weixin.URL, "&timestamp=") || strings.Contains(weixin.URL, "×") {
@@ -228,6 +244,7 @@ func TestEngineHostsAreAllowed(t *testing.T) {
 		"https://www.sogou.com/web?query=a",
 		"https://m.so.com/s?q=a",
 		"https://so.toutiao.com/search?keyword=a",
+		"https://weixin.sogou.com/weixin?type=2&query=a",
 	} {
 		parsed, err := http.NewRequest(http.MethodGet, raw, nil)
 		if err != nil {
