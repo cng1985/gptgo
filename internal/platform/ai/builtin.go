@@ -16,6 +16,7 @@ type Request struct {
 	SearchNotes  string
 	AgentName    string
 	Instructions string
+	SkillNotes   string
 	Tools        []Tool
 }
 
@@ -146,6 +147,13 @@ func planToolCalls(req Request) []ToolCall {
 				add("current_time", "{}")
 			} else if raw, err := json.Marshal(map[string]string{"timezone": tz}); err == nil {
 				add("current_time", string(raw))
+			}
+		}
+	}
+	if _, ok := available["load_skill"]; ok {
+		if name := skillMention(question); name != "" {
+			if raw, err := json.Marshal(map[string]string{"name": name}); err == nil {
+				add("load_skill", string(raw))
 			}
 		}
 	}
@@ -303,10 +311,22 @@ func containsAny(text string, parts ...string) bool {
 }
 
 var (
-	invokePattern   = regexp.MustCompile(`(?:调用|使用|use)\s+([A-Za-z_][A-Za-z0-9_]{0,60})`)
-	timezonePattern = regexp.MustCompile(`[A-Za-z]+/[A-Za-z0-9_+\-]+(?:/[A-Za-z0-9_+\-]+)?`)
-	dateLike        = regexp.MustCompile(`^\d{4}-\d{1,2}-\d{1,2}$`)
+	invokePattern       = regexp.MustCompile(`(?:调用|使用|use)\s+([A-Za-z_][A-Za-z0-9_]{0,60})`)
+	skillMentionPattern = regexp.MustCompile(`(?i)(?:技能\s*[:：]?\s*|skill\s*[:：]\s*|skill\s+)([A-Za-z0-9][A-Za-z0-9_-]{0,63})`)
+	skillSuffixPattern  = regexp.MustCompile(`([A-Za-z0-9][A-Za-z0-9_-]*[-_][A-Za-z0-9_-]*)\s*技能`)
+	timezonePattern     = regexp.MustCompile(`[A-Za-z]+/[A-Za-z0-9_+\-]+(?:/[A-Za-z0-9_+\-]+)?`)
+	dateLike            = regexp.MustCompile(`^\d{4}-\d{1,2}-\d{1,2}$`)
 )
+
+func skillMention(question string) string {
+	if match := skillMentionPattern.FindStringSubmatch(question); len(match) == 2 {
+		return strings.ToLower(match[1])
+	}
+	if match := skillSuffixPattern.FindStringSubmatch(question); len(match) == 2 {
+		return strings.ToLower(match[1])
+	}
+	return ""
+}
 
 func lastUser(messages []Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {

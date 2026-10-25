@@ -51,16 +51,17 @@
 | `POST /api/mcp/search` | 分页搜索当前账号的 MCP 服务 |
 | `POST /api/mcp/delete` | 删除 MCP 服务 |
 | `POST /api/mcp/tools` | 连接 MCP 并返回它提供的工具 |
-| `POST /api/skill/create` | 创建技能，运行环境为 `python`、`node` 或 `bash` |
-| `POST /api/skill/update` | 修改技能 |
-| `POST /api/skill/one` | 技能详情，包含脚本 |
-| `POST /api/skill/search` | 分页搜索当前账号的技能 |
-| `POST /api/skill/delete` | 删除技能 |
-| `POST /api/skill/run` | 试运行脚本。可传未保存的 `runtime`、`script` 和 `input`；只传 `id` 时运行已保存的脚本 |
+| `POST /api/skill/search` | 分页搜索当前账号已安装的技能 |
+| `POST /api/skill/one` | 技能详情，包含说明正文和文件列表 |
+| `POST /api/skill/update` | 启用或停用一个技能 |
+| `POST /api/skill/delete` | 删除技能及其文件 |
+| `POST /api/skill/upload` | 上传技能包。`multipart/form-data`，字段名 `file`，内容是 `.zip` 或 `SKILL.md` |
+| `POST /api/skill/hub/search` | 按关键词搜索配置的 SkillHub |
+| `POST /api/skill/hub/install` | 从 SkillHub 下载并安装。字段为 `namespace`、`slug`、`version` |
 | `GET /health/live` | 存活 |
 | `GET /health/ready` | 数据库可访问 |
 
-流式事件为 `meta`、`search`、`thinking`、`tool`、`delta`、`done`、`error`。请求带 `web_search: true` 时先发 `search`。它的 `status` 是 `running`、`done`、`empty` 或 `error`，完成时带 `sources`。助手消息的 `sources` 保存标题、链接和摘要。`tool` 事件带上工具名、参数、状态和结果。助手消息的 `tools` 字段保存这一轮调用。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。对话详情里的 `web_search` 记住输入框上的联网开关。
+流式事件为 `meta`、`search`、`thinking`、`tool`、`delta`、`done`、`error`。请求带 `web_search: true` 时先发 `search`。它的 `status` 是 `running`、`done`、`empty` 或 `error`，完成时带 `sources`。助手消息的 `sources` 保存标题、链接和摘要。`tool` 事件带上工具名、参数、状态和结果。助手消息的 `tools` 字段保存这一轮调用。已启用技能时，工具目录里会多一个 `load_skill`，参数是技能名称和可选的包内路径。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。对话详情里的 `web_search` 记住输入框上的联网开关。
 
 `POST /api/agent/draft` 接收 `prompt` 和 `model`。成功时 `data` 包含名称、简介、设定、模型、开场白和建议问题，不会写入数据库。选择内置助手，或没有模型密钥时，在本地生成。描述里点名 DeepSeek 或 MiniMax 时，草稿里的模型会改成对应项。确认后仍走 `POST /api/agent/create`。
 

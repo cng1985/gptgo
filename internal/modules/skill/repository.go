@@ -21,83 +21,98 @@ func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, request *SkillRequest) (response.Response[SkillResponse], error) {
-	var result response.Response[SkillResponse]
+func (r *Repository) Search(ctx context.Context, search *SkillSearch) (response.PageResponse[SkillSimple], error) {
+	var result response.PageResponse[SkillSimple]
 	owner, err := ownerID(ctx)
 	if err != nil {
 		return result, err
 	}
+	base := func() *gorm.DB {
+		query := r.db.WithContext(ctx).Model(&Skill{}).Where("account_id = ?", owner)
+		if keyword := strings.TrimSpace(search.Keyword); keyword != "" {
+			pattern := likePattern(keyword)
+			query = query.Where(
+				"name LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'",
+				pattern, pattern, pattern,
+			)
+		}
+		return query
+	}
+	var total int64
+	if err := base().Count(&total).Error; err != nil {
+		return result, mapDB(err)
+	}
+	var rows []Skill
+	err = base().Order("updated_at desc, id desc").Offset((search.Page - 1) * search.PageSize).Limit(search.PageSize).Find(&rows).Error
+	if err != nil {
+		return result, mapDB(err)
+	}
+	data := make([]SkillSimple, 0, len(rows))
+	for i := range rows {
+		data = append(data, simpleOf(&rows[i]))
+	}
+	return response.PageResponse[SkillSimple]{Data: data, Total: total, Page: search.Page, PageSize: search.PageSize}, nil
+}
+
+func (r *Repository) Count(ctx context.Context, owner int64) (int64, error) {
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&Skill{}).Where("account_id = ?", owner).Count(&count).Error; err != nil {
-		return result, mapDB(err)
-	}
-	if count >= 30 {
-		return result, apperr.Invalid("最多创建 30 个技能")
-	}
-	if err := r.ensureName(ctx, owner, request.Name, 0); err != nil {
-		return result, err
-	}
-	now := time.Now().UTC()
-	entity := Skill{
-		AccountID:    owner,
-		Title:        request.Title,
-		Name:         request.Name,
-		Description:  request.Description,
-		Instructions: request.Instructions,
-		Runtime:      request.Runtime,
-		Script:       request.Script,
-		Parameters:   request.Parameters,
-		TimeoutSec:   request.TimeoutSec,
-		Enabled:      request.Enabled,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
-		return result, mapDB(err)
-	}
-	return response.OK(toResponse(&entity)), nil
+	err := r.db.WithContext(ctx).Model(&Skill{}).Where("account_id = ?", owner).Count(&count).Error
+	return count, mapDB(err)
 }
 
-func (r *Repository) Update(ctx context.Context, request *SkillRequest) (response.Response[SkillResponse], error) {
-	var result response.Response[SkillResponse]
+func (r *Repository) Create(ctx context.Context, entity *Skill) error {
+	return mapDB(r.db.WithContext(ctx).Create(entity).Error)
+}
+
+func (r *Repository) UpdateMeta(ctx context.Context, entity *Skill) error {
 	owner, err := ownerID(ctx)
 	if err != nil {
-		return result, err
+		return err
 	}
-	if _, err := r.Find(ctx, request.ID); err != nil {
-		return result, err
+	res := r.db.WithContext(ctx).Model(&Skill{}).Where("id = ? AND account_id = ?", entity.ID, owner).Updates(map[string]any{
+		"name": entity.Name, "display_name": entity.DisplayName, "description": entity.Description,
+		"version": entity.Version, "source": entity.Source, "namespace": entity.Namespace,
+		"slug": entity.Slug, "registry": entity.Registry, "updated_at": entity.UpdatedAt,
+	})
+	if res.Error != nil {
+		return mapDB(res.Error)
 	}
-	if err := r.ensureName(ctx, owner, request.Name, request.ID); err != nil {
-		return result, err
+	if res.RowsAffected == 0 {
+		return apperr.NotFound("技能不存在")
 	}
-	values := map[string]any{
-		"title":        request.Title,
-		"name":         request.Name,
-		"description":  request.Description,
-		"instructions": request.Instructions,
-		"runtime":      request.Runtime,
-		"script":       request.Script,
-		"parameters":   request.Parameters,
-		"timeout_sec":  request.TimeoutSec,
-		"enabled":      request.Enabled,
-		"updated_at":   time.Now().UTC(),
-	}
-	if err := r.db.WithContext(ctx).Model(&Skill{}).Where("id = ? AND account_id = ?", request.ID, owner).Updates(values).Error; err != nil {
-		return result, mapDB(err)
-	}
-	return r.One(ctx, request.ID)
+	return nil
 }
 
-func (r *Repository) One(ctx context.Context, id int64) (response.Response[SkillResponse], error) {
-	var result response.Response[SkillResponse]
-	entity, err := r.Find(ctx, id)
+func (r *Repository) SetEnabled(ctx context.Context, id int64, enabled bool) (*Skill, error) {
+	owner, err := ownerID(ctx)
 	if err != nil {
-		return result, err
+		return nil, err
 	}
-	return response.OK(toResponse(entity)), nil
+	res := r.db.WithContext(ctx).Model(&Skill{}).Where("id = ? AND account_id = ?", id, owner).Updates(map[string]any{
+		"enabled": enabled, "updated_at": time.Now().UTC(),
+	})
+	if res.Error != nil {
+		return nil, mapDB(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return nil, apperr.NotFound("技能不存在")
+	}
+	return r.FindByID(ctx, id)
 }
 
-func (r *Repository) Find(ctx context.Context, id int64) (*Skill, error) {
+func (r *Repository) Delete(ctx context.Context, id int64) (*Skill, error) {
+	entity, err := r.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	owner, _ := ownerID(ctx)
+	if err := r.db.WithContext(ctx).Where("id = ? AND account_id = ?", id, owner).Delete(&Skill{}).Error; err != nil {
+		return nil, mapDB(err)
+	}
+	return entity, nil
+}
+
+func (r *Repository) FindByID(ctx context.Context, id int64) (*Skill, error) {
 	owner, err := ownerID(ctx)
 	if err != nil {
 		return nil, err
@@ -129,40 +144,32 @@ func (r *Repository) FindByName(ctx context.Context, name string) (*Skill, error
 	return &entity, nil
 }
 
-func (r *Repository) Search(ctx context.Context, search *SkillSearch) (response.PageResponse[SkillSimple], error) {
-	var result response.PageResponse[SkillSimple]
+func (r *Repository) FindMatch(ctx context.Context, raw string) (*Skill, error) {
 	owner, err := ownerID(ctx)
 	if err != nil {
-		return result, err
+		return nil, err
 	}
-	offset := int64(search.Page-1) * int64(search.PageSize)
-	base := func() *gorm.DB {
-		query := r.db.WithContext(ctx).Model(&Skill{}).Where("account_id = ?", owner)
-		if keyword := strings.TrimSpace(search.Keyword); keyword != "" {
-			pattern := likePattern(keyword)
-			query = query.Where(
-				"title LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'",
-				pattern, pattern, pattern,
-			)
-		}
-		return query
-	}
-	var total int64
-	if err := base().Count(&total).Error; err != nil {
-		return result, mapDB(err)
-	}
+	raw = strings.TrimSpace(raw)
+	key := strings.ToLower(raw)
 	var rows []Skill
-	err = base().Order("updated_at desc").Order("id desc").Offset(int(offset)).Limit(search.PageSize).Find(&rows).Error
+	err = r.db.WithContext(ctx).
+		Where("account_id = ? AND (name = ? OR slug = ? OR display_name = ?)", owner, key, key, raw).
+		Order("id asc").Find(&rows).Error
 	if err != nil {
-		return result, mapDB(err)
+		return nil, mapDB(err)
 	}
-	data := make([]SkillSimple, 0, len(rows))
+	if len(rows) == 0 {
+		return nil, apperr.NotFound("技能不存在")
+	}
 	for i := range rows {
-		data = append(data, toSimple(&rows[i]))
+		if rows[i].Name == key || rows[i].Slug == key {
+			return &rows[i], nil
+		}
 	}
-	return response.PageResponse[SkillSimple]{
-		Data: data, Total: total, Page: search.Page, PageSize: search.PageSize,
-	}, nil
+	if len(rows) > 1 {
+		return nil, apperr.Invalid("请使用技能名称")
+	}
+	return &rows[0], nil
 }
 
 func (r *Repository) Enabled(ctx context.Context) ([]Skill, error) {
@@ -171,54 +178,15 @@ func (r *Repository) Enabled(ctx context.Context) ([]Skill, error) {
 		return nil, err
 	}
 	var rows []Skill
-	err = r.db.WithContext(ctx).Where("account_id = ? AND enabled = ?", owner, true).
-		Order("updated_at desc").Order("id desc").Limit(12).Find(&rows).Error
-	if err != nil {
-		return nil, mapDB(err)
-	}
-	return rows, nil
+	err = r.db.WithContext(ctx).Where("account_id = ? AND enabled = ?", owner, true).Order("name asc").Find(&rows).Error
+	return rows, mapDB(err)
 }
 
-func (r *Repository) Delete(ctx context.Context, id int64) (response.Response[SkillResponse], error) {
-	var result response.Response[SkillResponse]
-	entity, err := r.Find(ctx, id)
-	if err != nil {
-		return result, err
-	}
-	if err := r.db.WithContext(ctx).Delete(entity).Error; err != nil {
-		return result, mapDB(err)
-	}
-	return response.OK(toResponse(entity)), nil
-}
-
-func (r *Repository) ensureName(ctx context.Context, owner int64, name string, ignoreID int64) error {
-	var count int64
-	query := r.db.WithContext(ctx).Model(&Skill{}).Where("account_id = ? AND name = ?", owner, name)
-	if ignoreID > 0 {
-		query = query.Where("id <> ?", ignoreID)
-	}
-	if err := query.Count(&count).Error; err != nil {
-		return mapDB(err)
-	}
-	if count > 0 {
-		return apperr.Conflict("已经有同名技能")
-	}
-	return nil
-}
-
-func toSimple(entity *Skill) SkillSimple {
+func simpleOf(entity *Skill) SkillSimple {
 	return SkillSimple{
-		ID: entity.ID, Title: entity.Title, Name: entity.Name, Description: entity.Description,
-		Runtime: entity.Runtime, TimeoutSec: entity.TimeoutSec, Enabled: entity.Enabled, UpdatedAt: entity.UpdatedAt,
-	}
-}
-
-func toResponse(entity *Skill) SkillResponse {
-	return SkillResponse{
-		ID: entity.ID, Title: entity.Title, Name: entity.Name, Description: entity.Description,
-		Instructions: entity.Instructions, Runtime: entity.Runtime, Script: entity.Script,
-		Parameters: entity.Parameters, TimeoutSec: entity.TimeoutSec, Enabled: entity.Enabled,
-		CreatedAt: entity.CreatedAt, UpdatedAt: entity.UpdatedAt,
+		ID: entity.ID, Name: entity.Name, DisplayName: entity.DisplayName, Description: entity.Description,
+		Version: entity.Version, Source: entity.Source, Namespace: entity.Namespace, Slug: entity.Slug,
+		Registry: entity.Registry, Enabled: entity.Enabled, UpdatedAt: entity.UpdatedAt,
 	}
 }
 
@@ -244,6 +212,10 @@ func mapDB(err error) error {
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return apperr.NotFound("技能不存在")
+	}
+	text := strings.ToLower(err.Error())
+	if strings.Contains(text, "unique") || strings.Contains(text, "constraint") {
+		return apperr.Conflict("已经有同名技能")
 	}
 	return apperr.Internal(err)
 }

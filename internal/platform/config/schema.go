@@ -23,6 +23,9 @@ var allowed = map[string]map[string]struct{}{
 	"search": {
 		"provider": {}, "api_key": {}, "timeout": {},
 	},
+	"skillhub": {
+		"base_url": {}, "token": {}, "timeout": {},
+	},
 }
 
 var allowedSQLite = map[string]struct{}{

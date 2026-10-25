@@ -31,6 +31,7 @@ func New(cfg *config.Config) *fx.App {
 		account.Module,
 		agent.Module,
 		chatbi.Module,
+		skill.Module,
 		toolkit.Module,
 		skill.Module,
 		fx.Invoke(Bootstrap),

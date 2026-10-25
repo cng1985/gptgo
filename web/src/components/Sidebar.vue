@@ -197,7 +197,7 @@ async function signOut() {
       </button>
       <button class="search-entry" :class="{ active: route.name === 'tools' }" type="button" @click="openPath('/tools')">
         <Icon name="plug" :size="16" />
-        <span>工具与 MCP</span>
+        <span>技能与工具</span>
       </button>
     </div>
     <button v-if="!biMode && !searchOpen" class="search-entry" type="button" @click="openSearch">

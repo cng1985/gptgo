@@ -17,7 +17,7 @@ var Module = fx.Module(
 		return NewResource(repo, agents, models, cfg.AI.DefaultModel)
 	}),
 	fx.Provide(func(resource *Resource, models *aiplat.Router, tools *toolkit.Resource, skills *skill.Resource) *Controller {
-		return NewController(resource, models, mergeTools(tools, skills))
+		return NewController(resource, models, NewToolSource(tools, skills))
 	}),
 	fx.Provide(fx.Annotate(
 		func(controller *Controller) routing.Registrar { return controller },

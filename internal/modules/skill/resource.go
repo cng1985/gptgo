@@ -1,50 +1,37 @@
 package skill
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
-	aiplat "gptgo/internal/platform/ai"
+	"gptgo/internal/platform/config"
 	apperr "gptgo/internal/platform/errors"
 	"gptgo/internal/platform/response"
 )
 
-const defaultParameters = `{"type":"object","properties":{"input":{"type":"string","description":"传给脚本的文本"}},"additionalProperties":true}`
-
 type Resource struct {
 	repo *Repository
+	root string
+	hub  *Hub
 }
 
-func NewResource(repo *Repository) *Resource {
-	return &Resource{repo: repo}
-}
-
-func (r *Resource) Create(ctx context.Context, request *SkillRequest) (response.Response[SkillResponse], error) {
-	var zero response.Response[SkillResponse]
-	if err := prepare(request, false); err != nil {
-		return zero, err
+func NewResource(repo *Repository, cfg *config.Config) (*Resource, error) {
+	hub, err := NewHub(cfg.SkillHub)
+	if err != nil {
+		return nil, err
 	}
-	return r.repo.Create(ctx, request)
-}
-
-func (r *Resource) Update(ctx context.Context, request *SkillRequest) (response.Response[SkillResponse], error) {
-	var zero response.Response[SkillResponse]
-	if request == nil || request.ID <= 0 {
-		return zero, apperr.Invalid("技能不存在")
-	}
-	if err := prepare(request, true); err != nil {
-		return zero, err
-	}
-	return r.repo.Update(ctx, request)
-}
-
-func (r *Resource) One(ctx context.Context, request *SkillRequest) (response.Response[SkillResponse], error) {
-	var zero response.Response[SkillResponse]
-	if request == nil || request.ID <= 0 {
-		return zero, apperr.NotFound("技能不存在")
-	}
-	return r.repo.One(ctx, request.ID)
+	return &Resource{repo: repo, root: filepath.Join(cfg.App.DataDir, "skills"), hub: hub}, nil
 }
 
 func (r *Resource) Search(ctx context.Context, search *SkillSearch) (response.PageResponse[SkillSimple], error) {
@@ -52,15 +39,39 @@ func (r *Resource) Search(ctx context.Context, search *SkillSearch) (response.Pa
 	if search == nil {
 		return zero, apperr.Invalid("参数格式错误")
 	}
-	page, size, err := normalizePage(search.Page, search.PageSize, 50)
+	page, size, err := normalizePage(search.Page, search.PageSize, 20)
 	if err != nil {
 		return zero, err
 	}
-	search.Page, search.PageSize = page, size
 	if len([]rune(search.Keyword)) > 100 {
 		return zero, apperr.Invalid("搜索关键词过长")
 	}
+	search.Page, search.PageSize = page, size
 	return r.repo.Search(ctx, search)
+}
+
+func (r *Resource) One(ctx context.Context, request *SkillRequest) (response.Response[SkillResponse], error) {
+	var zero response.Response[SkillResponse]
+	if request == nil || request.ID <= 0 {
+		return zero, apperr.NotFound("技能不存在")
+	}
+	entity, err := r.repo.FindByID(ctx, request.ID)
+	if err != nil {
+		return zero, err
+	}
+	return response.OK(r.detail(entity, 2000)), nil
+}
+
+func (r *Resource) Update(ctx context.Context, request *SkillRequest) (response.Response[SkillResponse], error) {
+	var zero response.Response[SkillResponse]
+	if request == nil || request.ID <= 0 {
+		return zero, apperr.NotFound("技能不存在")
+	}
+	entity, err := r.repo.SetEnabled(ctx, request.ID, request.Enabled)
+	if err != nil {
+		return zero, err
+	}
+	return response.OK(r.detail(entity, 2000)), nil
 }
 
 func (r *Resource) Delete(ctx context.Context, request *SkillRequest) (response.Response[SkillResponse], error) {
@@ -68,217 +79,356 @@ func (r *Resource) Delete(ctx context.Context, request *SkillRequest) (response.
 	if request == nil || request.ID <= 0 {
 		return zero, apperr.NotFound("技能不存在")
 	}
-	return r.repo.Delete(ctx, request.ID)
-}
-
-func (r *Resource) Run(ctx context.Context, request *SkillRunRequest) (response.Response[SkillRunResult], error) {
-	var zero response.Response[SkillRunResult]
-	if _, err := ownerID(ctx); err != nil {
+	entity, err := r.repo.Delete(ctx, request.ID)
+	if err != nil {
 		return zero, err
 	}
+	_ = os.RemoveAll(r.dir(entity.AccountID, entity.ID))
+	return response.OK(responseOf(entity, nil, "")), nil
+}
+
+func (r *Resource) Upload(ctx context.Context, filename string, file io.Reader) (response.Response[SkillResponse], error) {
+	var zero response.Response[SkillResponse]
+	if file == nil {
+		return zero, apperr.Invalid("请上传 .zip 或 SKILL.md")
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxZipBytes+1))
+	if err != nil {
+		var max *http.MaxBytesError
+		if errors.As(err, &max) {
+			return zero, apperr.TooLarge("技能包过大")
+		}
+		return zero, apperr.Invalid("技能包无法读取")
+	}
+	files, doc, err := readPackage(filename, raw)
+	if err != nil {
+		return zero, err
+	}
+	entity, err := r.save(ctx, doc, files, origin{Source: "upload", Slug: doc.Name})
+	if err != nil {
+		return zero, err
+	}
+	return response.OK(r.detail(entity, 2000)), nil
+}
+
+func (r *Resource) SearchHub(ctx context.Context, search *HubSearch) (response.PageResponse[HubSkill], error) {
+	var zero response.PageResponse[HubSkill]
+	if search == nil {
+		return zero, apperr.Invalid("参数格式错误")
+	}
+	page, size, err := normalizePage(search.Page, search.PageSize, 20)
+	if err != nil {
+		return zero, err
+	}
+	if size > 50 {
+		size = 50
+	}
+	items, total, err := r.hub.Search(ctx, search.Keyword, page, size)
+	if err != nil {
+		return zero, err
+	}
+	if items == nil {
+		items = []HubSkill{}
+	}
+	return response.PageResponse[HubSkill]{Data: items, Total: total, Page: page, PageSize: size}, nil
+}
+
+func (r *Resource) InstallHub(ctx context.Context, request *HubInstall) (response.Response[SkillResponse], error) {
+	var zero response.Response[SkillResponse]
 	if request == nil {
 		return zero, apperr.Invalid("参数格式错误")
 	}
-	spec := execSpec{
-		Name:    strings.TrimSpace(request.Name),
-		Runtime: strings.TrimSpace(request.Runtime),
-		Script:  request.Script,
-		Timeout: request.TimeoutSec,
-	}
-	if request.ID > 0 && strings.TrimSpace(spec.Script) == "" {
-		entity, err := r.repo.Find(ctx, request.ID)
-		if err != nil {
-			return zero, err
-		}
-		spec.Script = entity.Script
-		if spec.Runtime == "" {
-			spec.Runtime = entity.Runtime
-		}
-		if spec.Timeout == 0 {
-			spec.Timeout = entity.TimeoutSec
-		}
-		if spec.Name == "" {
-			spec.Name = entity.Name
-		}
-	}
-	input, err := normalizeInput(request.Input)
+	namespace, slug, err := splitCoord(request.Namespace, request.Slug)
 	if err != nil {
 		return zero, err
 	}
-	spec.Input = input
-	result, err := execute(ctx, spec)
+	raw, err := r.hub.Download(ctx, namespace, slug, request.Version)
 	if err != nil {
 		return zero, err
 	}
-	return response.OK(result), nil
+	files, doc, err := readPackage(slug+".zip", raw)
+	if err != nil {
+		return zero, err
+	}
+	if doc.Version == "" {
+		doc.Version = normalizeVersion(request.Version)
+	}
+	entity, err := r.save(ctx, doc, files, origin{
+		Source: "skillhub", Namespace: namespace, Slug: slug, Registry: r.registry(),
+	})
+	if err != nil {
+		return zero, err
+	}
+	return response.OK(r.detail(entity, 2000)), nil
 }
 
-func (r *Resource) Catalog(ctx context.Context) ([]aiplat.Tool, error) {
+func (r *Resource) Enabled(ctx context.Context) ([]Entry, error) {
 	rows, err := r.repo.Enabled(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tools := make([]aiplat.Tool, 0, len(rows))
+	out := make([]Entry, 0, len(rows))
 	for i := range rows {
-		parameters := rows[i].Parameters
-		if !json.Valid([]byte(parameters)) || !strings.HasPrefix(strings.TrimSpace(parameters), "{") {
-			parameters = defaultParameters
-		}
-		tools = append(tools, aiplat.Tool{
-			Name:        rows[i].Name,
-			Description: describe(&rows[i]),
-			Parameters:  json.RawMessage(parameters),
-		})
+		out = append(out, Entry{Name: rows[i].Name, DisplayName: rows[i].DisplayName, Description: rows[i].Description})
 	}
-	return tools, nil
+	return out, nil
 }
 
-func (r *Resource) Owns(ctx context.Context, name string) (bool, error) {
-	_, err := r.repo.FindByName(ctx, name)
-	if err == nil {
-		return true, nil
+func (r *Resource) Load(ctx context.Context, arguments string) (bool, string, error) {
+	var body struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
 	}
-	if appErr, ok := apperr.As(err); ok && appErr.Cat == apperr.CategoryNotFound {
-		return false, nil
+	if err := decodeObject(arguments, &body); err != nil {
+		return false, "参数需要是 JSON 对象", nil
 	}
-	return false, err
-}
-
-func (r *Resource) Invoke(ctx context.Context, name, arguments string) (bool, string, error) {
-	entity, err := r.repo.FindByName(ctx, name)
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		return false, "需要技能名称", nil
+	}
+	entity, err := r.repo.FindMatch(ctx, name)
 	if err != nil {
 		if appErr, ok := apperr.As(err); ok && appErr.Cat == apperr.CategoryNotFound {
 			return false, "没有这个技能", nil
+		}
+		if appErr, ok := apperr.As(err); ok && appErr.Cat == apperr.CategoryInvalid {
+			return false, appErr.Msg, nil
 		}
 		return false, "", err
 	}
 	if !entity.Enabled {
 		return false, "这个技能已停用", nil
 	}
-	input, err := normalizeInput(arguments)
+	text, err := r.read(entity, body.Path)
 	if err != nil {
-		return false, "参数需要是 JSON 对象", nil
-	}
-	result, err := execute(ctx, execSpec{
-		Name:    entity.Name,
-		Runtime: entity.Runtime,
-		Script:  entity.Script,
-		Timeout: entity.TimeoutSec,
-		Input:   input,
-	})
-	if err != nil {
+		if appErr, ok := apperr.As(err); ok && appErr.Cat != apperr.CategoryInternal {
+			return false, appErr.Msg, nil
+		}
 		return false, "", err
 	}
-	if !result.OK {
-		detail := strings.TrimSpace(result.Stderr)
-		if detail == "" {
-			detail = "脚本没有成功结束"
-		}
-		if text := strings.TrimSpace(result.Stdout); text != "" {
-			detail = text + "\n" + detail
-		}
-		return false, clipRunes(detail, 4000), nil
-	}
-	text := strings.TrimSpace(result.Stdout)
-	if text == "" {
-		text = "脚本没有输出"
-	}
-	return true, clipRunes(text, 4000), nil
+	return true, text, nil
 }
 
-func prepare(request *SkillRequest, updating bool) error {
-	if request == nil {
-		return apperr.Invalid("参数格式错误")
-	}
-	request.Title = strings.TrimSpace(request.Title)
-	request.Name = strings.TrimSpace(request.Name)
-	request.Description = strings.TrimSpace(request.Description)
-	request.Instructions = strings.TrimSpace(request.Instructions)
-	request.Runtime = strings.TrimSpace(request.Runtime)
-	request.Parameters = strings.TrimSpace(request.Parameters)
-	if request.Title == "" || len([]rune(request.Title)) > 40 {
-		return apperr.Invalid("名称长度需要在 1 到 40 个字之间")
-	}
-	if !validName(request.Name) {
-		return apperr.Invalid("调用名要用小写字母开头，只能包含小写字母、数字和下划线，且不能占用内置或 MCP 工具名")
-	}
-	if request.Description == "" || len([]rune(request.Description)) > 300 {
-		return apperr.Invalid("说明长度需要在 1 到 300 个字之间")
-	}
-	if len([]rune(request.Instructions)) > 2000 {
-		return apperr.Invalid("补充说明不能超过 2000 个字")
-	}
-	switch request.Runtime {
-	case "python", "node", "bash":
-	default:
-		return apperr.Invalid("只支持 python、node、bash")
-	}
-	if strings.TrimSpace(request.Script) == "" {
-		return apperr.Invalid("脚本不能为空")
-	}
-	if strings.ContainsRune(request.Script, 0) || len(request.Script) > maxScriptBytes {
-		return apperr.Invalid("脚本不能超过 32 KB，且不能包含空字符")
-	}
-	if request.TimeoutSec == 0 {
-		request.TimeoutSec = defaultTimeout
-	}
-	if request.TimeoutSec < 1 || request.TimeoutSec > maxTimeout {
-		return apperr.Invalid("超时时间需要在 1 到 20 秒之间")
-	}
-	parameters, err := normalizeParameters(request.Parameters)
+func (r *Resource) save(ctx context.Context, doc skillDoc, files map[string][]byte, from origin) (*Skill, error) {
+	owner, err := ownerID(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if from.Slug == "" {
+		from.Slug = doc.Name
+	}
+	existing, err := r.repo.FindByName(ctx, doc.Name)
+	if err != nil {
+		if appErr, ok := apperr.As(err); !ok || appErr.Cat != apperr.CategoryNotFound {
+			return nil, err
+		}
+		count, err := r.repo.Count(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		if count >= maxSkills {
+			return nil, apperr.Invalid("最多安装 40 个技能")
+		}
+		now := time.Now().UTC()
+		entity := &Skill{
+			AccountID: owner, Name: doc.Name, DisplayName: doc.DisplayName, Description: doc.Description,
+			Version: doc.Version, Source: from.Source, Namespace: from.Namespace, Slug: from.Slug,
+			Registry: from.Registry, Enabled: true, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := r.repo.Create(ctx, entity); err != nil {
+			return nil, err
+		}
+		if err := writeTree(r.dir(owner, entity.ID), files); err != nil {
+			_, _ = r.repo.Delete(ctx, entity.ID)
+			_ = os.RemoveAll(r.dir(owner, entity.ID))
+			return nil, apperr.Unavailable("技能文件无法保存")
+		}
+		return entity, nil
+	}
+	if err := writeTree(r.dir(owner, existing.ID), files); err != nil {
+		return nil, apperr.Unavailable("技能文件无法保存")
+	}
+	existing.Name = doc.Name
+	existing.DisplayName = doc.DisplayName
+	existing.Description = doc.Description
+	existing.Version = doc.Version
+	existing.Source = from.Source
+	existing.Namespace = from.Namespace
+	existing.Slug = from.Slug
+	existing.Registry = from.Registry
+	existing.UpdatedAt = time.Now().UTC()
+	if err := r.repo.UpdateMeta(ctx, existing); err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
+func (r *Resource) detail(entity *Skill, limit int) SkillResponse {
+	dir := r.dir(entity.AccountID, entity.ID)
+	files := listFiles(dir)
+	body := ""
+	if raw, err := os.ReadFile(filepath.Join(dir, "SKILL.md")); err == nil {
+		if doc, err := parseSkill(string(raw)); err == nil {
+			body = clipRunes(doc.Body, limit)
+		} else {
+			body = clipRunes(string(raw), limit)
+		}
+	}
+	return responseOf(entity, files, body)
+}
+
+func (r *Resource) read(entity *Skill, rel string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	if rel == "" || strings.EqualFold(rel, "SKILL.md") {
+		rel = "SKILL.md"
+	}
+	clean, skip, err := classifyPath(rel)
+	if err != nil || skip || clean == "" {
+		return "", apperr.Invalid("技能文件路径无效")
+	}
+	dir := r.dir(entity.AccountID, entity.ID)
+	full := filepath.Clean(filepath.Join(dir, filepath.FromSlash(clean)))
+	root := filepath.Clean(dir)
+	if full != root && !strings.HasPrefix(full, root+string(os.PathSeparator)) {
+		return "", apperr.Invalid("技能文件路径无效")
+	}
+	info, err := os.Stat(full)
+	if err != nil || info.IsDir() {
+		return "", apperr.NotFound("技能里没有这个文件")
+	}
+	raw, err := os.ReadFile(full)
+	if err != nil {
+		return "", apperr.Unavailable("技能文件无法读取")
+	}
+	if bytes.IndexByte(raw, 0) >= 0 {
+		return "", apperr.Invalid("这个文件不是文本")
+	}
+	text := string(raw)
+	if clean == "SKILL.md" {
+		if doc, err := parseSkill(text); err == nil {
+			text = doc.Body
+		}
+	}
+	clipped := false
+	if len([]rune(text)) > 3200 {
+		text = clipRunes(text, 3200)
+		clipped = true
+	}
+	var b strings.Builder
+	b.WriteString("技能 ")
+	b.WriteString(entity.Name)
+	if entity.DisplayName != "" && entity.DisplayName != entity.Name {
+		b.WriteString("（")
+		b.WriteString(entity.DisplayName)
+		b.WriteString("）")
+	}
+	if entity.Version != "" {
+		b.WriteString("\n版本 ")
+		b.WriteString(entity.Version)
+	}
+	b.WriteString("\n\n")
+	b.WriteString(text)
+	if clipped {
+		b.WriteString("\n\n（说明已截断）")
+	}
+	if names := listFiles(dir); len(names) > 0 {
+		if len(names) > 20 {
+			names = append(names[:20], "…")
+		}
+		b.WriteString("\n\n包内文件：")
+		b.WriteString(strings.Join(names, ", "))
+	}
+	return b.String(), nil
+}
+
+func (r *Resource) dir(account, id int64) string {
+	return filepath.Join(r.root, strconv.FormatInt(account, 10), strconv.FormatInt(id, 10))
+}
+
+func (r *Resource) registry() string {
+	if r == nil || r.hub == nil || r.hub.base == nil {
+		return ""
+	}
+	return r.hub.base.String()
+}
+
+func responseOf(entity *Skill, files []string, body string) SkillResponse {
+	if files == nil {
+		files = []string{}
+	}
+	return SkillResponse{
+		SkillSimple: simpleOf(entity),
+		Files:       files,
+		Body:        body,
+		CreatedAt:   entity.CreatedAt,
+	}
+}
+
+func writeTree(dir string, files map[string][]byte) error {
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return err
 	}
-	request.Parameters = parameters
-	if updating && request.ID <= 0 {
-		return apperr.Invalid("技能不存在")
+	staging := dir + ".staging"
+	backup := dir + ".bak"
+	if err := os.RemoveAll(staging); err != nil {
+		return err
 	}
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		return err
+	}
+	for rel, body := range files {
+		target := filepath.Join(staging, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			_ = os.RemoveAll(staging)
+			return err
+		}
+		if err := os.WriteFile(target, body, 0o644); err != nil {
+			_ = os.RemoveAll(staging)
+			return err
+		}
+	}
+	_ = os.RemoveAll(backup)
+	if _, err := os.Stat(dir); err == nil {
+		if err := os.Rename(dir, backup); err != nil {
+			_ = os.RemoveAll(staging)
+			return err
+		}
+	}
+	if err := os.Rename(staging, dir); err != nil {
+		_ = os.Rename(backup, dir)
+		_ = os.RemoveAll(staging)
+		return err
+	}
+	_ = os.RemoveAll(backup)
 	return nil
 }
 
-func normalizeParameters(raw string) (string, error) {
-	if raw == "" {
-		return defaultParameters, nil
-	}
-	if len(raw) > 4000 || !json.Valid([]byte(raw)) || raw[0] != '{' {
-		return "", apperr.Invalid("参数结构需要是 JSON 对象")
-	}
-	var payload any
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return "", apperr.Invalid("参数结构需要是 JSON 对象")
-	}
-	compact, err := json.Marshal(payload)
-	if err != nil {
-		return "", apperr.Invalid("参数结构需要是 JSON 对象")
-	}
-	return string(compact), nil
+func listFiles(dir string) []string {
+	var out []string
+	_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			return nil
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	sort.Strings(out)
+	return out
 }
 
-func normalizeInput(raw string) (string, error) {
+func decodeObject(raw string, dest any) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "{}", nil
+		raw = "{}"
 	}
-	if len(raw) > maxInputBytes || !json.Valid([]byte(raw)) || raw[0] != '{' {
-		return "", apperr.Invalid("输入需要是 JSON 对象")
+	if !json.Valid([]byte(raw)) || raw[0] != '{' {
+		return apperr.Invalid("参数需要是 JSON 对象")
 	}
-	return raw, nil
-}
-
-func describe(entity *Skill) string {
-	var b strings.Builder
-	title := strings.TrimSpace(entity.Title)
-	if title != "" && title != entity.Name {
-		b.WriteString(title)
-		b.WriteString("。")
-	}
-	b.WriteString(strings.TrimSpace(entity.Description))
-	if extra := strings.TrimSpace(entity.Instructions); extra != "" {
-		b.WriteString("\n")
-		b.WriteString(extra)
-	}
-	b.WriteString("\n调用后执行已保存的脚本：JSON 参数从标准输入读入，标准输出作为结果。")
-	return clipRunes(b.String(), 800)
+	return json.Unmarshal([]byte(raw), dest)
 }
 
 func normalizePage(page, size, fallback int) (int, int, error) {

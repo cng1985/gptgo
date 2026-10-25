@@ -67,7 +67,7 @@ func sanitizeToken(value string) string {
 
 func reservedToolName(name string) bool {
 	switch name {
-	case "current_time", "calculator":
+	case "current_time", "calculator", "load_skill":
 		return true
 	}
 	_, ok := mcpServerID(name)

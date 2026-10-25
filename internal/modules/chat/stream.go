@@ -110,10 +110,18 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 		turns = append(turns, aiplat.Message{Role: turn.Role, Content: turn.Content})
 	}
 	var catalog []aiplat.Tool
+	var skillNotes string
 	if tools != nil {
 		listed, err := tools.Catalog(streamCtx)
 		if err == nil {
 			catalog = listed
+		}
+		if notes, ok := tools.(interface {
+			Notes(context.Context) (string, error)
+		}); ok {
+			if text, err := notes.Notes(streamCtx); err == nil {
+				skillNotes = text
+			}
 		}
 	}
 	var traces []toolTrace
@@ -159,6 +167,7 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 			SearchNotes:  data.SearchNotes,
 			AgentName:    data.AgentName,
 			Instructions: data.Instructions,
+			SkillNotes:   skillNotes,
 			Tools:        catalog,
 		}
 		if rounds >= maxToolRounds {

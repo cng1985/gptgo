@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -50,6 +51,7 @@ type Config struct {
 	Logging  LoggingConfig  `yaml:"logging"`
 	AI       AIConfig       `yaml:"ai"`
 	Search   SearchConfig   `yaml:"search"`
+	SkillHub SkillHubConfig `yaml:"skillhub"`
 	Runtime  RuntimeInfo    `yaml:"-"`
 }
 
@@ -116,6 +118,12 @@ type SearchConfig struct {
 	Provider string   `yaml:"provider"`
 	APIKey   string   `yaml:"api_key"`
 	Timeout  Duration `yaml:"timeout"`
+}
+
+type SkillHubConfig struct {
+	BaseURL string   `yaml:"base_url"`
+	Token   string   `yaml:"token"`
+	Timeout Duration `yaml:"timeout"`
 }
 
 func (c *Config) Address() string {
@@ -341,6 +349,15 @@ func (c *Config) Validate() error {
 	if c.Search.Timeout.Std() < 0 {
 		return fmt.Errorf("search.timeout 不能为负数")
 	}
+	if raw := strings.TrimSpace(c.SkillHub.BaseURL); raw != "" {
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("skillhub.base_url 需要是 http 或 https")
+		}
+	}
+	if c.SkillHub.Timeout.Std() < 0 {
+		return fmt.Errorf("skillhub.timeout 不能为负数")
+	}
 	return nil
 }
 
@@ -521,6 +538,9 @@ func applyEnv(cfg *Config) error {
 			return nil
 		}},
 		{"APP_SEARCH_TIMEOUT", durationEnv(func(d Duration) { cfg.Search.Timeout = d })},
+		{"APP_SKILLHUB_BASE_URL", func(v string) error { cfg.SkillHub.BaseURL = v; return nil }},
+		{"APP_SKILLHUB_TOKEN", func(v string) error { cfg.SkillHub.Token = v; return nil }},
+		{"APP_SKILLHUB_TIMEOUT", durationEnv(func(d Duration) { cfg.SkillHub.Timeout = d })},
 	}
 	for _, binding := range bindings {
 		value, ok := os.LookupEnv(binding.env)

@@ -181,6 +181,9 @@ func (c *Client) payload(req Request, stream bool) ([]byte, error) {
 	if len(req.Tools) > 0 {
 		system += "可以调用工具。拿到工具结果后再给出最终回答，不要编造没有返回的数据。"
 	}
+	if notes := strings.TrimSpace(req.SkillNotes); notes != "" {
+		system += "\n\n" + notes
+	}
 	if instructions := strings.TrimSpace(req.Instructions); instructions != "" {
 		system += "\n\n当前智能体"
 		if name := strings.TrimSpace(req.AgentName); name != "" {

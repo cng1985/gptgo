@@ -11,7 +11,7 @@ server:
   shutdown_timeout: 30s
   request_timeout: 30s
   sse_timeout: 15m
-  max_body_bytes: 2097152
+  max_body_bytes: 8388608
   trusted_proxies: []
 database:
   enabled: true
@@ -42,3 +42,7 @@ search:
   provider: duckduckgo
   api_key: ""
   timeout: 8s
+skillhub:
+  base_url: https://skill.xfyun.cn
+  token: ""
+  timeout: 20s
