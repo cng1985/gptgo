@@ -33,6 +33,7 @@ func New(cfg *config.Config) *fx.App {
 		chatbi.Module,
 		skill.Module,
 		toolkit.Module,
+		skill.Module,
 		fx.Invoke(Bootstrap),
 		fx.Invoke(server.Mount),
 		fx.Invoke(database.Hook),

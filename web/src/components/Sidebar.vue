@@ -191,6 +191,10 @@ async function signOut() {
         <Icon name="bot" :size="16" />
         <span>创建智能体</span>
       </button>
+      <button class="search-entry" :class="{ active: route.name === 'skills' }" type="button" @click="openPath('/skills')">
+        <Icon name="code" :size="16" />
+        <span>技能</span>
+      </button>
       <button class="search-entry" :class="{ active: route.name === 'tools' }" type="button" @click="openPath('/tools')">
         <Icon name="plug" :size="16" />
         <span>技能与工具</span>
