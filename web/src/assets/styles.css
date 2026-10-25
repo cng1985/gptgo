@@ -406,6 +406,21 @@ button:disabled { cursor: default; }
 .draft-box .field textarea { min-height: 72px; }
 .opt-chip:disabled { opacity: 0.55; }
 .agent-layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+.tool-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; margin-top: 16px; }
+.tool-block { margin-top: 16px; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.toggle-row button { flex: 0 0 auto; white-space: nowrap; }
+.toggle-row span, .history-row span, .skill-hit span { display: block; color: var(--text-3); font-size: 12px; }
+.skill-hit { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.skill-hit > div { flex: 1; min-width: 0; }
+.skill-hit strong { display: block; }
+.skill-hit span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.skill-hit button { flex: 0 0 auto; white-space: nowrap; }
+.skill-body { white-space: pre-wrap; margin: 0 0 12px; background: var(--hover); border-radius: 12px; padding: 12px; max-height: 220px; overflow: auto; font-size: 13px; }
+.remote-tools { list-style: none; margin: 12px 0 0; padding: 0; }
+.remote-tools li { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid var(--line); }
+.file-input { display: none; }
+.hub-form { margin-top: 16px; }
 .agent-layout .field input + input { margin-top: 8px; }
 .history-row.selected { background: var(--hover); }
 

@@ -34,15 +34,28 @@ APP_AI_API_KEY=你的密钥 APP_AI_BASE_URL=https://api.openai.com/v1 APP_AI_UPS
 
 同一页下面可以继续查询自己配置的 MySQL、PostgreSQL 或 SQL Server。那部分只生成并执行单条只读 SQL。
 
-## 工具与 MCP
+## 技能、工具与 MCP
 
-对话可以调用工具。内置的当前时间和计算器默认开启，在「工具与 MCP」里可以关闭。
+对话可以同时使用技能、内置工具、HTTP 工具和 MCP。内置的当前时间和计算器默认开启，在「技能与工具」里可以关闭。
+
+技能是带 `SKILL.md` 的说明包。页面可以上传 `.zip` 或单个 `SKILL.md`，也可以按关键词搜索 SkillHub 并安装公开技能。安装后默认启用。模型需要时会调用 `load_skill` 读取说明，再按说明回答。包里的脚本只作为文件保存，不会执行。
 
 同一页可以添加 HTTP 工具。模型调用时按配置的地址发送 GET 或 POST，参数来自模型，请求头加密后保存在本机。
 
 MCP 支持两种传输。stdio 直接启动命令，不经过 shell。HTTP 使用 JSON-RPC。保存后可以测试连接，并看到对方提供的工具。已启用的 MCP 工具会在对话里交给模型。调用过程显示在回答上方，并随消息保存。
 
-没有模型密钥时，内置助手会在要求计算、询问当前时间，或写明「调用 工具名」时使用这些工具。
+没有模型密钥时，内置助手会在要求计算、询问当前时间、写明「调用 工具名」，或写明「使用技能 名称」时使用这些能力。
+
+SkillHub 地址默认是 `https://skill.xfyun.cn`。私有注册中心可以改配置，令牌只放在服务端：
+
+```yaml
+skillhub:
+  base_url: https://skill.example
+  token: "你的令牌"
+  timeout: 20s
+```
+
+环境变量是 `APP_SKILLHUB_BASE_URL`、`APP_SKILLHUB_TOKEN` 和 `APP_SKILLHUB_TIMEOUT`。把 `skillhub.base_url` 留空后，上传仍然可用，搜索和安装会提示还没有配置地址。
 
 ## 联网搜索
 

@@ -69,6 +69,52 @@ func TestBuiltinIgnoresDateAndOrdinaryText(t *testing.T) {
 	}
 }
 
+func TestBuiltinPlansNamedSkill(t *testing.T) {
+	builtin := &Builtin{}
+	stream, err := builtin.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "请使用技能 pdf-parser 处理附件"}},
+		Tools:    []Tool{{Name: "load_skill", Description: "技能"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []ToolCall
+	for delta := range stream {
+		calls = append(calls, delta.ToolCalls...)
+	}
+	if len(calls) != 1 || calls[0].Name != "load_skill" || !strings.Contains(calls[0].Arguments, "pdf-parser") {
+		t.Fatalf("没有读取技能: %#v", calls)
+	}
+
+	plain, err := builtin.Stream(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "打开 skillhub 看看"}},
+		Tools:    []Tool{{Name: "load_skill", Description: "技能"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for delta := range plain {
+		if len(delta.ToolCalls) > 0 {
+			t.Fatalf("skillhub 不应被当成技能名: %#v", delta.ToolCalls)
+		}
+	}
+}
+
+func TestPayloadIncludesSkillNotes(t *testing.T) {
+	client := &Client{upstream: "upstream-model"}
+	raw, err := client.payload(Request{
+		Model:      "ignored",
+		SkillNotes: "可用技能：pdf-parser。",
+		Messages:   []Message{{Role: "user", Content: "你好"}},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "pdf-parser") {
+		t.Fatalf("系统提示没有技能: %s", raw)
+	}
+}
+
 func TestPayloadIncludesToolsAndToolMessages(t *testing.T) {
 	client := &Client{upstream: "upstream-model"}
 	raw, err := client.payload(Request{
