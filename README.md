@@ -59,7 +59,9 @@ skillhub:
 
 ## 联网搜索
 
-输入框里的「联网」打开后，这次提问会先检索公开网页，再把摘要交给模型。来源显示在回答上方，并随消息保存。默认使用 DuckDuckGo 和中文维基百科，不需要密钥。检索只访问这两个服务，不会打开结果链接。
+输入框里的「联网」打开后，这次提问会先检索公开网页，再阅读靠前的几条结果，把摘要交给模型。来源和摘要显示在回答上方，并随消息保存。
+
+默认先访问 DuckDuckGo。这个页面拒绝程序标识时，会改读 DuckDuckGo Lite，并补充中文维基百科。阅读结果页时只走 http 或 https，并拒绝内网、回环和云元数据地址。检索接口本身仍然只访问配置的搜索服务。没有密钥时，内置助手会直接依据这些材料回答，而不是把材料附在一段无关说明后面。
 
 可以改成 Bing 或 Tavily：
 
@@ -70,7 +72,7 @@ search:
   timeout: 8s
 ```
 
-环境变量是 `APP_SEARCH_PROVIDER`、`APP_SEARCH_API_KEY` 和 `APP_SEARCH_TIMEOUT`。把 `search.provider` 设为 `off` 后，开关不会拿到外部结果。
+环境变量是 `APP_SEARCH_PROVIDER`、`APP_SEARCH_API_KEY` 和 `APP_SEARCH_TIMEOUT`。超时默认 12 秒，包含检索和阅读网页。把 `search.provider` 设为 `off` 后，开关不会拿到外部结果。
 
 ## 技能
 

@@ -21,7 +21,26 @@ type Hit struct {
 	Title   string `json:"title"`
 	URL     string `json:"url"`
 	Snippet string `json:"snippet"`
+	Excerpt string `json:"excerpt,omitempty"`
 }
+
+// UnavailableNote 是检索没有可用结果时交给模型的说明。
+const UnavailableNote = "本次联网检索没有返回结果。"
+
+const (
+	browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+	apiUA     = "ChatBI/1.0 (local research assistant)"
+)
+
+type fetchKind int
+
+const (
+	fetchAPI fetchKind = iota + 1
+	fetchHTML
+	fetchPage
+)
+
+type fetchKindKey struct{}
 
 type Result struct {
 	Notes string
@@ -35,8 +54,10 @@ type Client struct {
 	http           *http.Client
 	permitLoopback bool
 	duckURL        string
+	liteURL        string
 	duckAPI        string
 	wikiZH         string
+	fetchPages     bool
 	wikiEN         string
 	bingURL        string
 	tavilyURL      string
@@ -44,14 +65,16 @@ type Client struct {
 
 func New(cfg *config.Config) *Client {
 	client := &Client{
-		provider:  "duckduckgo",
-		timeout:   8 * time.Second,
-		duckURL:   "https://html.duckduckgo.com/html/",
-		duckAPI:   "https://api.duckduckgo.com/",
-		wikiZH:    "https://zh.wikipedia.org/w/api.php",
-		wikiEN:    "https://en.wikipedia.org/w/api.php",
-		bingURL:   "https://api.bing.microsoft.com/v7.0/search",
-		tavilyURL: "https://api.tavily.com/search",
+		provider:   "duckduckgo",
+		timeout:    12 * time.Second,
+		fetchPages: true,
+		duckURL:    "https://html.duckduckgo.com/html/",
+		liteURL:    "https://lite.duckduckgo.com/lite/",
+		duckAPI:    "https://api.duckduckgo.com/",
+		wikiZH:     "https://zh.wikipedia.org/w/api.php",
+		wikiEN:     "https://en.wikipedia.org/w/api.php",
+		bingURL:    "https://api.bing.microsoft.com/v7.0/search",
+		tavilyURL:  "https://api.tavily.com/search",
 	}
 	if cfg != nil {
 		if provider := strings.ToLower(strings.TrimSpace(cfg.Search.Provider)); provider != "" {
@@ -71,11 +94,37 @@ func (c *Client) Search(ctx context.Context, query string) (Result, error) {
 	if query == "" {
 		return Result{}, fmt.Errorf("检索词为空")
 	}
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-	switch c.provider {
-	case "off":
+	if c.provider == "off" {
 		return Result{}, fmt.Errorf("联网检索已关闭")
+	}
+	budget := c.timeout
+	if budget <= 0 {
+		budget = 12 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	discoverBudget := budget * 2 / 3
+	if discoverBudget < 3*time.Second && budget >= 3*time.Second {
+		discoverBudget = 3 * time.Second
+	}
+	if discoverBudget > budget {
+		discoverBudget = budget
+	}
+	discoverCtx, cancelDiscover := context.WithTimeout(ctx, discoverBudget)
+	result, err := c.discover(discoverCtx, query)
+	cancelDiscover()
+	if err != nil || len(result.Hits) == 0 {
+		return result, err
+	}
+	if ctx.Err() == nil {
+		c.enrich(ctx, query, result.Hits)
+	}
+	result.Notes = formatNotes(result.Hits)
+	return result, nil
+}
+
+func (c *Client) discover(ctx context.Context, query string) (Result, error) {
+	switch c.provider {
 	case "bing":
 		hits, err := c.bing(ctx, query)
 		return pack(hits, err)
@@ -109,7 +158,7 @@ func (c *Client) duck(ctx context.Context, query string) (Result, error) {
 	group.Add(2)
 	go func() {
 		defer group.Done()
-		htmlHits, htmlErr = c.duckHTML(ctx, query)
+		htmlHits, htmlErr = c.webIndex(ctx, query)
 	}()
 	go func() {
 		defer group.Done()
@@ -143,9 +192,38 @@ func (c *Client) duck(ctx context.Context, query string) (Result, error) {
 	return pack(hits, first)
 }
 
+func (c *Client) webIndex(ctx context.Context, query string) ([]Hit, error) {
+	hits, err := c.duckHTML(ctx, query)
+	if len(hits) > 0 {
+		return hits, nil
+	}
+	if ctx.Err() != nil {
+		if err == nil {
+			err = ctx.Err()
+		}
+		return nil, err
+	}
+	if strings.TrimSpace(c.liteURL) == "" {
+		return nil, err
+	}
+	liteHits, liteErr := c.duckPage(ctx, c.liteURL, query)
+	if len(liteHits) > 0 {
+		return liteHits, nil
+	}
+	if err == nil {
+		err = liteErr
+	}
+	return nil, err
+}
+
 func (c *Client) duckHTML(ctx context.Context, query string) ([]Hit, error) {
-	// POST 会落到验证页并返回 202，页面里没有结果。GET 才能拿到 result__a。
-	parsed, err := url.Parse(c.duckURL)
+	return c.duckPage(ctx, c.duckURL, query)
+}
+
+func (c *Client) duckPage(ctx context.Context, endpoint, query string) ([]Hit, error) {
+	// POST 会落到验证页并返回 202。GET 配合浏览器标识才能拿到结果；
+	// 标识仍被拦截时，调用方会再读 Lite 页面。
+	parsed, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +235,7 @@ func (c *Client) duckHTML(ctx context.Context, query string) ([]Hit, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := c.do(req)
+	raw, _, err := c.roundTrip(req, fetchHTML, 1<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -259,27 +337,71 @@ func (c *Client) tavily(ctx context.Context, query string) ([]Hit, error) {
 }
 
 func (c *Client) do(req *http.Request) ([]byte, error) {
-	if err := c.allow(req.URL); err != nil {
-		return nil, err
+	body, _, err := c.roundTrip(req, fetchAPI, 1<<20)
+	return body, err
+}
+
+func (c *Client) roundTrip(req *http.Request, kind fetchKind, limit int64) ([]byte, string, error) {
+	req = req.WithContext(context.WithValue(req.Context(), fetchKindKey{}, kind))
+	if err := c.allow(req.Context(), req.URL); err != nil {
+		return nil, "", err
 	}
-	req.Header.Set("User-Agent", "ChatBI/1.0 (local research assistant)")
-	req.Header.Set("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
+	decorate(req, kind)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if req.Context().Err() != nil {
-			return nil, req.Context().Err()
+			return nil, "", req.Context().Err()
 		}
-		return nil, fmt.Errorf("检索请求失败")
+		if kind == fetchPage {
+			return nil, "", fmt.Errorf("网页读取失败")
+		}
+		return nil, "", fmt.Errorf("检索请求失败")
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	ctype := resp.Header.Get("Content-Type")
+	if kind == fetchPage && !pageTypeOK(ctype) {
+		return nil, ctype, fmt.Errorf("不是可阅读的网页")
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit))
 	if err != nil {
-		return nil, fmt.Errorf("检索请求失败")
+		if kind == fetchPage {
+			return nil, ctype, fmt.Errorf("网页读取失败")
+		}
+		return nil, ctype, fmt.Errorf("检索请求失败")
 	}
-	if resp.StatusCode == http.StatusAccepted || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("检索服务返回 %d", resp.StatusCode)
+	if resp.StatusCode == http.StatusAccepted {
+		return nil, ctype, fmt.Errorf("检索服务要求验证")
 	}
-	return raw, nil
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if kind == fetchPage {
+			return nil, ctype, fmt.Errorf("网页读取失败")
+		}
+		return nil, ctype, fmt.Errorf("检索服务返回 %d", resp.StatusCode)
+	}
+	return raw, ctype, nil
+}
+
+func decorate(req *http.Request, kind fetchKind) {
+	switch kind {
+	case fetchHTML, fetchPage:
+		req.Header.Set("User-Agent", browserUA)
+		req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.6")
+		if req.Header.Get("Accept") == "" {
+			req.Header.Set("Accept", "text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5")
+		}
+	default:
+		if req.Header.Get("User-Agent") == "" {
+			req.Header.Set("User-Agent", apiUA)
+		}
+		if req.Header.Get("Accept") == "" {
+			req.Header.Set("Accept", "application/json,text/html;q=0.8,*/*;q=0.5")
+		}
+	}
+}
+
+func kindFrom(ctx context.Context) fetchKind {
+	kind, _ := ctx.Value(fetchKindKey{}).(fetchKind)
+	return kind
 }
 
 func (c *Client) newHTTP() *http.Client {
@@ -303,7 +425,11 @@ func (c *Client) newHTTP() *http.Client {
 			if len(via) >= 3 {
 				return fmt.Errorf("重定向过多")
 			}
-			return c.allow(req.URL)
+			ctx := req.Context()
+			if kindFrom(ctx) == 0 && len(via) > 0 {
+				ctx = via[0].Context()
+			}
+			return c.allow(ctx, req.URL)
 		},
 	}
 }
@@ -313,7 +439,11 @@ func (c *Client) dial(ctx context.Context, dialer *net.Dialer, network, addr str
 	if err != nil {
 		return nil, err
 	}
-	if !c.hostAllowed(host) {
+	if kindFrom(ctx) == fetchPage {
+		if !c.pageHostOK(host) {
+			return nil, fmt.Errorf("地址不可访问")
+		}
+	} else if !c.hostAllowed(host) {
 		return nil, fmt.Errorf("地址不可访问")
 	}
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
@@ -338,9 +468,18 @@ func (c *Client) dial(ctx context.Context, dialer *net.Dialer, network, addr str
 	return nil, last
 }
 
-func (c *Client) allow(target *url.URL) error {
+func (c *Client) allow(ctx context.Context, target *url.URL) error {
 	if target == nil || target.Host == "" || target.User != nil {
 		return fmt.Errorf("地址不可访问")
+	}
+	if kindFrom(ctx) == fetchPage {
+		if target.Scheme != "http" && target.Scheme != "https" {
+			return fmt.Errorf("地址不可访问")
+		}
+		if !c.pageHostOK(target.Hostname()) {
+			return fmt.Errorf("地址不可访问")
+		}
+		return nil
 	}
 	if target.Scheme != "https" && !(c.permitLoopback && target.Scheme == "http") {
 		return fmt.Errorf("地址不可访问")
@@ -351,10 +490,24 @@ func (c *Client) allow(target *url.URL) error {
 	return nil
 }
 
+func (c *Client) pageHostOK(host string) bool {
+	host = strings.ToLower(strings.Trim(strings.TrimSpace(host), "[]"))
+	if host == "" || strings.ContainsAny(host, " \t") {
+		return false
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") {
+		return c.permitLoopback && host == "localhost"
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return !blockedIP(ip, c.permitLoopback)
+	}
+	return true
+}
+
 func (c *Client) hostAllowed(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	switch host {
-	case "html.duckduckgo.com", "api.duckduckgo.com", "zh.wikipedia.org", "en.wikipedia.org", "api.bing.microsoft.com", "api.tavily.com":
+	case "html.duckduckgo.com", "lite.duckduckgo.com", "api.duckduckgo.com", "zh.wikipedia.org", "en.wikipedia.org", "api.bing.microsoft.com", "api.tavily.com":
 		return true
 	}
 	if c.permitLoopback && (host == "127.0.0.1" || host == "localhost" || host == "::1") {

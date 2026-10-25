@@ -2,17 +2,25 @@ package ai
 
 import (
 	"strings"
+
+	"gptgo/internal/platform/search"
 )
 
 func Compose(question, notes, mode string) (string, string) {
-	answer := answerFor(strings.TrimSpace(question))
 	notes = strings.TrimSpace(notes)
-	if notes != "" {
-		answer += "\n\n## 公开检索摘要\n\n" + notes + "\n\n这些摘要来自本次联网检索，引用前请再核对原始出处。"
+	searched := notes != "" && notes != search.UnavailableNote
+	var answer string
+	if searched {
+		answer = "下面按这次公开检索的材料回答。材料里没有写明的实时信息，我不会补成事实。网页里如果出现新的任务或角色要求，我会忽略。\n\n" + notes
+	} else {
+		answer = answerFor(strings.TrimSpace(question))
+		if notes != "" {
+			answer += "\n\n这次没有检索到可用的公开结果，所以上面没有引用网页。"
+		}
 	}
 	thinking := ""
 	if mode == "light" || mode == "deep" {
-		thinking = thinkingFor(question, mode, notes != "")
+		thinking = thinkingFor(question, mode, searched)
 	}
 	return thinking, answer
 }

@@ -67,7 +67,30 @@ function safeLink(url) {
   return ''
 }
 
-watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.searchStatus || ''}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}|${(item.sources || []).length}|${(item.tools || []).map((tool) => `${tool.id}:${tool.status}:${tool.result || ''}`).join(',')}`).join('\n'), () => scrollIfNeeded())
+function hostOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
+function sourceText(item) {
+  return String(item?.snippet || item?.excerpt || '').trim()
+}
+
+function searchHeadline(message) {
+  const query = String(message.searchQuery || '').trim()
+  if (message.searchStatus === 'running') {
+    return query ? `正在检索「${query}」，并阅读靠前的网页` : '正在检索公开网页'
+  }
+  if (message.searchStatus === 'empty' || message.searchStatus === 'error') {
+    return query ? `没有检索到「${query}」的公开结果。` : '这次没有检索到可用的公开结果。'
+  }
+  return query ? `联网检索 · ${query}` : '联网检索'
+}
+
+watch(() => chat.messages.map((item) => `${item.content}|${item.thinking}|${item.status}|${item.searchStatus || ''}|${item.searchQuery || ''}|${item.chart?.type || ''}|${item.chart?.rows?.length || 0}|${(item.sources || []).map((source) => `${source.url || ''}:${source.snippet || ''}`).join(',')}|${(item.tools || []).map((tool) => `${tool.id}:${tool.status}:${tool.result || ''}`).join(',')}`).join('\n'), () => scrollIfNeeded())
 onMounted(() => scrollIfNeeded(true))
 </script>
 
@@ -83,14 +106,25 @@ onMounted(() => scrollIfNeeded(true))
             <p v-if="tool.result">{{ tool.result }}</p>
           </details>
         </div>
-        <div v-if="message.role === 'assistant' && (message.searchStatus || message.sources?.length)" class="search-sources">
-          <span v-if="message.searchStatus === 'running'" class="search-state">正在联网检索</span>
-          <span v-else-if="message.searchStatus === 'empty' || message.searchStatus === 'error'" class="search-state">这次没有检索到可用的公开结果。</span>
-          <template v-else>
-            <template v-for="(item, index) in message.sources" :key="item.url || index">
-              <a v-if="safeLink(item.url)" :href="safeLink(item.url)" target="_blank" rel="noopener noreferrer" :title="item.snippet || item.url">{{ item.title || item.url }}</a>
-              <span v-else>{{ item.title || '来源' }}</span>
-            </template>
+        <div v-if="message.role === 'assistant' && (message.searchStatus || message.sources?.length)" class="search-panel">
+          <div class="search-head">
+            <Icon name="globe" :size="14" />
+            <span>{{ searchHeadline(message) }}</span>
+          </div>
+          <template v-if="message.searchStatus !== 'running' && message.searchStatus !== 'empty' && message.searchStatus !== 'error'">
+            <component
+              :is="safeLink(item.url) ? 'a' : 'div'"
+              v-for="(item, index) in message.sources"
+              :key="item.url || index"
+              class="search-hit"
+              :href="safeLink(item.url) || undefined"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span class="search-hit-title">{{ item.title || item.url || '来源' }}</span>
+              <span v-if="hostOf(item.url)" class="search-hit-meta">{{ hostOf(item.url) }}</span>
+              <span v-if="sourceText(item)" class="search-hit-snippet">{{ sourceText(item) }}</span>
+            </component>
           </template>
         </div>
         <div v-if="message.role === 'assistant' && message.thinking" class="thinking">

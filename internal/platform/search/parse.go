@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	resultAnchor = regexp.MustCompile(`(?is)<a\b[^>]*class="[^"]*(?:result__a|result-link)[^"]*"[^>]*>.*?</a>`)
-	resultBlurb  = regexp.MustCompile(`(?is)<(?:a|td|span)\b[^>]*class="[^"]*(?:result__snippet|result-snippet)[^"]*"[^>]*>(.*?)</(?:a|td|span)>`)
-	hrefAttr     = regexp.MustCompile(`(?i)\bhref\s*=\s*"([^"]*)"`)
+	resultAnchor = regexp.MustCompile(`(?is)<a\b[^>]*class\s*=\s*['"][^'"]*(?:result__a|result-link)[^'"]*['"][^>]*>.*?</a>`)
+	resultBlurb  = regexp.MustCompile(`(?is)<(?:a|td|span)\b[^>]*class\s*=\s*['"][^'"]*(?:result__snippet|result-snippet)[^'"]*['"][^>]*>(.*?)</(?:a|td|span)>`)
+	hrefAttr     = regexp.MustCompile(`(?i)\bhref\s*=\s*['"]([^'"]*)['"]`)
 )
 
 func parseDuckHTML(body string) []Hit {
@@ -30,8 +30,11 @@ func parseDuckHTML(body string) []Hit {
 			href = html.UnescapeString(match[1])
 		}
 		title := ""
-		if gt := strings.Index(anchor, ">"); gt >= 0 && gt+1 < len(anchor)-4 {
-			title = anchor[gt+1 : len(anchor)-4]
+		lower := strings.ToLower(anchor)
+		gt := strings.Index(anchor, ">")
+		end := strings.LastIndex(lower, "</a>")
+		if gt >= 0 && end > gt {
+			title = anchor[gt+1 : end]
 		}
 		hit, ok := cleanHit(title, unwrapDuck(href), snippet)
 		if ok {
@@ -258,12 +261,16 @@ func formatNotes(hits []Hit) string {
 		b.WriteString(hit.Title)
 		b.WriteByte('\n')
 		b.WriteString(hit.URL)
-		if hit.Snippet != "" {
+		body := strings.TrimSpace(hit.Excerpt)
+		if utf8.RuneCountInString(body) < utf8.RuneCountInString(hit.Snippet) {
+			body = hit.Snippet
+		}
+		if body != "" {
 			b.WriteByte('\n')
-			b.WriteString(hit.Snippet)
+			b.WriteString(body)
 		}
 	}
-	return clip(b.String(), 4000)
+	return clip(b.String(), 6000)
 }
 
 func itoa(n int) string {
