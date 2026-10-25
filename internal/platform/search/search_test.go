@@ -75,6 +75,10 @@ func TestClientMergesSourcesAndStaysOnAllowlist(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/html/":
+			if r.Method != http.MethodGet || r.URL.Query().Get("q") == "" {
+				http.Error(w, "bad html search", http.StatusMethodNotAllowed)
+				return
+			}
 			io.WriteString(w, `<a class="result__a" href="https://example.com/go">Go</a><a class="result__snippet">编程语言</a>`)
 		case "/wiki":
 			io.WriteString(w, `{"query":{"pages":[{"title":"维基","index":1,"extract":"百科","fullurl":"https://zh.wikipedia.org/wiki/Go"}]}}`)
@@ -113,6 +117,10 @@ func TestClientFallsBackAndUsesConfiguredProvider(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/html/":
+			if r.Method != http.MethodGet || r.URL.Query().Get("q") == "" {
+				http.Error(w, "bad html search", http.StatusMethodNotAllowed)
+				return
+			}
 			io.WriteString(w, `<html></html>`)
 		case "/wiki":
 			io.WriteString(w, `{"query":{"pages":[]}}`)
@@ -150,6 +158,34 @@ func TestClientFallsBackAndUsesConfiguredProvider(t *testing.T) {
 	client.provider = "off"
 	if _, err := client.Search(context.Background(), "天气"); err == nil {
 		t.Fatal("关闭检索时应该失败")
+	}
+}
+
+func TestDuckHTMLRejectsChallengePage(t *testing.T) {
+	accepted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Query().Get("q") == "" {
+			http.Error(w, "bad html search", http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, `<div class="anomaly-modal__title"></div><a class="result__a" href="https://example.com/trap">陷阱</a>`)
+	}))
+	defer accepted.Close()
+
+	client := testClient(accepted.URL)
+	hits, err := client.duckHTML(context.Background(), "天气")
+	if err == nil || len(hits) != 0 {
+		t.Fatalf("验证页不应被当成结果: %v %#v", err, hits)
+	}
+
+	challenge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `<div class="anomaly-modal__title">验证</div>`)
+	}))
+	defer challenge.Close()
+	client.duckURL = challenge.URL + "/html/"
+	hits, err = client.duckHTML(context.Background(), "天气")
+	if err == nil || len(hits) != 0 {
+		t.Fatalf("200 验证页也不应被当成结果: %v %#v", err, hits)
 	}
 }
 
