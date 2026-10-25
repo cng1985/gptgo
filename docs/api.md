@@ -62,7 +62,7 @@
 | `GET /health/live` | 存活 |
 | `GET /health/ready` | 数据库可访问 |
 
-流式事件为 `meta`、`search`、`thinking`、`tool`、`delta`、`done`、`error`。请求带 `web_search: true` 时先发 `search`。它的 `status` 是 `running`、`done`、`empty` 或 `error`，完成时带 `sources`。助手消息的 `sources` 保存标题、链接、摘要和后来读到的正文。检索完成后就会先把来源写入消息，所以回答还在生成时也可以点开明细。`POST /api/chat/source` 成功时 `data` 包含标题、链接和正文，并把正文写回这条来源；地址不在来源列表里时返回 400，其他账号的消息返回 404，网页没有可读正文时返回 503。`tool` 事件带上工具名、参数、状态和结果。助手消息的 `tools` 字段保存这一轮调用。已启用技能时，工具目录里会多一个 `load_skill`，参数是技能名称和可选的包内路径。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。对话详情里的 `web_search` 记住输入框上的联网开关。
+流式事件为 `meta`、`search`、`thinking`、`tool`、`delta`、`done`、`error`。请求带 `web_search: true` 时先发 `search`。它的 `status` 是 `running`、`done`、`empty` 或 `error`，完成时带 `sources`。助手消息的 `sources` 保存标题、链接、摘要和读到的正文。摘要不够具体时会自动打开多条结果，并顺着跳转和页内链接再取正文。检索完成后就会先把来源写入消息，所以回答还在生成时也可以点开明细。`POST /api/chat/source` 成功时 `data` 包含标题、链接和正文，并把正文写回这条来源；地址不在来源列表里时返回 400，其他账号的消息返回 404，网页没有可读正文时返回 503。`tool` 事件带上工具名、参数、状态和结果。助手消息的 `tools` 字段保存这一轮调用。已启用技能时，工具目录里会多一个 `load_skill`，参数是技能名称和可选的包内路径。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。对话详情里的 `web_search` 记住输入框上的联网开关。
 
 `POST /api/agent/draft` 接收 `prompt` 和 `model`。成功时 `data` 包含名称、简介、设定、模型、开场白和建议问题，不会写入数据库。选择内置助手，或没有模型密钥时，在本地生成。描述里点名 DeepSeek 或 MiniMax 时，草稿里的模型会改成对应项。确认后仍走 `POST /api/agent/create`。
 

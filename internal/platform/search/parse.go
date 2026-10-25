@@ -13,22 +13,30 @@ import (
 )
 
 var (
-	resultAnchor = regexp.MustCompile(`(?is)<a\b[^>]*class\s*=\s*['"][^'"]*(?:result__a|result-link)[^'"]*['"][^>]*>.*?</a>`)
-	resultBlurb  = regexp.MustCompile(`(?is)<(?:a|td|span)\b[^>]*class\s*=\s*['"][^'"]*(?:result__snippet|result-snippet)[^'"]*['"][^>]*>(.*?)</(?:a|td|span)>`)
-	hrefAttr     = regexp.MustCompile(`(?i)\bhref\s*=\s*['"]([^'"]*)['"]`)
-	htmlComment  = regexp.MustCompile(`(?s)<!--.*?-->`)
-	bingTitle    = regexp.MustCompile(`(?is)<h2\b[^>]*>\s*<a\b[^>]*\bhref\s*=\s*['"]([^'"]+)['"][^>]*>(.*?)</a>`)
-	bingSnippet  = regexp.MustCompile(`(?is)<p\b[^>]*\bb_lineclamp\d\b[^>]*>(.*?)</p>`)
-	baiduMu      = regexp.MustCompile(`"mu"\s*:\s*"((?:\\.|[^"\\])*)"`)
-	baiduSText   = regexp.MustCompile(`(?s)<!--s-text-->(.*?)<!--/s-text-->`)
-	baiduSummary = regexp.MustCompile(`"text"\s*:\s*"((?:\\.|[^"\\])*)"`)
-	sogouAnchor  = regexp.MustCompile(`(?is)<h3\b[^>]*\bvr-title\b[^>]*>\s*<a\b([^>]*)>(.*?)</a>`)
-	sogouSnippet = regexp.MustCompile(`(?is)<(?:p|span)\b[^>]*class\s*=\s*['"][^'"]*(?:space-txt|star-wiki)[^'"]*['"][^>]*>(.*?)</(?:p|span)>`)
-	soTitle      = regexp.MustCompile(`(?is)<h3\b[^>]*\bres-title\b[^>]*>(.*?)</h3>`)
-	soSnippet    = regexp.MustCompile(`(?is)<p\b[^>]*\bsummary\b[^>]*>(.*?)</p>`)
-	toutiaoTitle = regexp.MustCompile(`"title":"((?:\\.|[^"\\])*)"`)
-	toutiaoText  = regexp.MustCompile(`"summary_text":"((?:\\.|[^"\\])*)"`)
-	toutiaoURL   = regexp.MustCompile(`"url":"((?:\\.|[^"\\])*)"`)
+	resultAnchor   = regexp.MustCompile(`(?is)<a\b[^>]*class\s*=\s*['"][^'"]*(?:result__a|result-link)[^'"]*['"][^>]*>.*?</a>`)
+	resultBlurb    = regexp.MustCompile(`(?is)<(?:a|td|span)\b[^>]*class\s*=\s*['"][^'"]*(?:result__snippet|result-snippet)[^'"]*['"][^>]*>(.*?)</(?:a|td|span)>`)
+	hrefAttr       = regexp.MustCompile(`(?i)\bhref\s*=\s*['"]([^'"]*)['"]`)
+	htmlComment    = regexp.MustCompile(`(?s)<!--.*?-->`)
+	bingTitle      = regexp.MustCompile(`(?is)<h2\b[^>]*>\s*<a\b[^>]*\bhref\s*=\s*['"]([^'"]+)['"][^>]*>(.*?)</a>`)
+	bingSnippet    = regexp.MustCompile(`(?is)<p\b[^>]*\bb_lineclamp\d\b[^>]*>(.*?)</p>`)
+	baiduMu        = regexp.MustCompile(`"mu"\s*:\s*"((?:\\.|[^"\\])*)"`)
+	baiduSText     = regexp.MustCompile(`(?s)<!--s-text-->(.*?)<!--/s-text-->`)
+	baiduSummary   = regexp.MustCompile(`"text"\s*:\s*"((?:\\.|[^"\\])*)"`)
+	sogouAnchor    = regexp.MustCompile(`(?is)<h3\b[^>]*\bvr-title\b[^>]*>\s*<a\b([^>]*)>(.*?)</a>`)
+	sogouSnippet   = regexp.MustCompile(`(?is)<(?:p|span)\b[^>]*class\s*=\s*['"][^'"]*(?:space-txt|star-wiki)[^'"]*['"][^>]*>(.*?)</(?:p|span)>`)
+	soTitle        = regexp.MustCompile(`(?is)<h3\b[^>]*\bres-title\b[^>]*>(.*?)</h3>`)
+	soSnippet      = regexp.MustCompile(`(?is)<p\b[^>]*\bsummary\b[^>]*>(.*?)</p>`)
+	toutiaoTitle   = regexp.MustCompile(`"title":"((?:\\.|[^"\\])*)"`)
+	toutiaoText    = regexp.MustCompile(`"summary_text":"((?:\\.|[^"\\])*)"`)
+	toutiaoAbs     = regexp.MustCompile(`"abstract":"((?:\\.|[^"\\])*)"`)
+	toutiaoURL     = regexp.MustCompile(`"url":"((?:\\.|[^"\\])*)"`)
+	toutiaoArticle = regexp.MustCompile(`"article_url":"((?:\\.|[^"\\])*)"`)
+	baiduLink      = regexp.MustCompile(`(?is)<a\b[^>]*\bhref\s*=\s*['"](https?://(?:www\.)?baidu\.com/link\?[^'"]+)['"][^>]*>(.*?)</a>`)
+	weixinAnchor   = regexp.MustCompile(`(?is)<h3\b[^>]*>\s*<a\b([^>]*)>(.*?)</a>`)
+	weixinSnippet  = regexp.MustCompile(`(?is)<p\b[^>]*\btxt-info\b[^>]*>(.*?)</p>`)
+	jsRedirect     = regexp.MustCompile(`(?i)(?:window\.)?location(?:\.href|\.replace)\s*(?:=\s*|\()\s*['"]([^'"]+)['"]`)
+	metaRedirect   = regexp.MustCompile(`(?i)url\s*=\s*['"]?([^'">\s]+)`)
+	anchorTag      = regexp.MustCompile(`(?is)<a\b([^>]*)>(.*?)</a>`)
 )
 
 func parseDuckHTML(body string) []Hit {
@@ -224,7 +232,7 @@ func cleanURL(raw string) (string, bool) {
 	}
 	parsed.Fragment = ""
 	link := parsed.String()
-	if len(link) > 500 || !utf8.ValidString(link) {
+	if len(link) > 1500 || !utf8.ValidString(link) {
 		return "", false
 	}
 	return link, true
@@ -290,8 +298,8 @@ func formatNotes(hits []Hit) string {
 		b.WriteByte('\n')
 		b.WriteString(hit.URL)
 		body := strings.TrimSpace(hit.Excerpt)
-		if utf8.RuneCountInString(body) < utf8.RuneCountInString(hit.Snippet) {
-			body = hit.Snippet
+		if body == "" {
+			body = strings.TrimSpace(hit.Snippet)
 		}
 		if body != "" {
 			b.WriteByte('\n')
@@ -382,7 +390,29 @@ func parseBaiduHTML(body string) []Hit {
 			break
 		}
 	}
+	if len(hits) == 0 {
+		hits = parseBaiduLinks(body)
+	}
 	return tagEngine(hits, "百度")
+}
+
+func parseBaiduLinks(body string) []Hit {
+	locs := baiduLink.FindAllStringSubmatch(body, 8)
+	hits := make([]Hit, 0, len(locs))
+	for _, match := range locs {
+		if len(match) < 3 {
+			continue
+		}
+		hit, ok := acceptEngineHit(match[2], unescapeURL(match[1]), "")
+		if !ok {
+			continue
+		}
+		hits = append(hits, hit)
+		if len(hits) == 5 {
+			break
+		}
+	}
+	return hits
 }
 
 func parseSogouHTML(body string) []Hit {
@@ -450,6 +480,9 @@ func parseSoHTML(body string) []Hit {
 }
 
 func parseToutiaoHTML(body string) []Hit {
+	if hits := parseToutiaoArticles(body); len(hits) > 0 {
+		return hits
+	}
 	locs := toutiaoTitle.FindAllStringSubmatchIndex(body, 24)
 	hits := make([]Hit, 0, len(locs))
 	seen := map[string]struct{}{}
@@ -484,6 +517,78 @@ func parseToutiaoHTML(body string) []Hit {
 	return tagEngine(hits, "头条搜索")
 }
 
+func parseToutiaoArticles(body string) []Hit {
+	locs := toutiaoArticle.FindAllStringSubmatchIndex(body, 12)
+	if len(locs) == 0 {
+		return nil
+	}
+	hits := make([]Hit, 0, len(locs))
+	seen := map[string]struct{}{}
+	for _, loc := range locs {
+		rawURL := preferToutiaoURL(decodeJSString(body[loc[2]:loc[3]]))
+		window := before(body, loc[0], 4000)
+		title := lastJS(toutiaoTitle, window)
+		snippet := lastJS(toutiaoAbs, window)
+		if snippet == "" {
+			snippet = lastJS(toutiaoText, window)
+		}
+		if toutiaoNoise(title) {
+			continue
+		}
+		hit, ok := acceptEngineHit(title, rawURL, snippet)
+		if !ok {
+			continue
+		}
+		if _, ok := seen[hit.URL]; ok {
+			continue
+		}
+		seen[hit.URL] = struct{}{}
+		hits = append(hits, hit)
+		if len(hits) == 5 {
+			break
+		}
+	}
+	return tagEngine(hits, "头条搜索")
+}
+
+func lastJS(pattern *regexp.Regexp, window string) string {
+	matches := pattern.FindAllStringSubmatch(window, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	return decodeJSString(matches[len(matches)-1][1])
+}
+
+func before(body string, end, width int) string {
+	if end < 0 {
+		end = 0
+	}
+	if end > len(body) {
+		end = len(body)
+	}
+	start := end - width
+	if start < 0 {
+		start = 0
+	}
+	return body[start:end]
+}
+
+func preferToutiaoURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if h5 := parsed.Query().Get("h5_url"); h5 != "" {
+		if decoded, err := url.QueryUnescape(h5); err == nil && absoluteHTTP(decoded) {
+			if landing, err := url.Parse(decoded); err == nil && !strings.Contains(strings.ToLower(landing.Hostname()), "toutiao.com") {
+				return decoded
+			}
+		}
+	}
+	return raw
+}
+
 func after(body string, start, width int) string {
 	if start < 0 || start >= len(body) {
 		return ""
@@ -499,14 +604,55 @@ func sogouURL(attrs string) string {
 	if link := attrLoose(attrs, "linkurl"); absoluteHTTP(link) {
 		return link
 	}
-	href := attrLoose(attrs, "href")
-	if strings.HasPrefix(href, "//") {
-		href = "https:" + href
+	return absolutize("https://www.sogou.com", attrLoose(attrs, "href"))
+}
+
+func parseWeixinHTML(body string) []Hit {
+	locs := weixinAnchor.FindAllStringSubmatchIndex(body, 12)
+	hits := make([]Hit, 0, len(locs))
+	for _, loc := range locs {
+		rawURL := absolutize("https://weixin.sogou.com", attrLoose(body[loc[2]:loc[3]], "href"))
+		if !strings.Contains(rawURL, "/link?") {
+			continue
+		}
+		title := body[loc[4]:loc[5]]
+		window := after(body, loc[1], 1600)
+		snippet := ""
+		if match := weixinSnippet.FindStringSubmatch(window); len(match) > 1 {
+			snippet = match[1]
+		}
+		hit, ok := acceptEngineHit(title, rawURL, snippet)
+		if !ok {
+			continue
+		}
+		hits = append(hits, hit)
+		if len(hits) == 5 {
+			break
+		}
 	}
-	if absoluteHTTP(href) {
-		return href
+	return tagEngine(hits, "微信搜索")
+}
+
+func absolutize(base, raw string) string {
+	raw = strings.TrimSpace(unescapeURL(raw))
+	if raw == "" || strings.HasPrefix(strings.ToLower(raw), "javascript:") {
+		return ""
 	}
-	return ""
+	if strings.HasPrefix(raw, "//") {
+		raw = "https:" + raw
+	}
+	if absoluteHTTP(raw) {
+		return raw
+	}
+	parsedBase, err := url.Parse(base)
+	if err != nil {
+		return ""
+	}
+	ref, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return parsedBase.ResolveReference(ref).String()
 }
 
 func absoluteHTTP(raw string) bool {
@@ -535,7 +681,30 @@ func acceptEngineHit(title, rawURL, snippet string) (Hit, bool) {
 	return hit, true
 }
 
+func isResultRedirect(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	pathName := strings.ToLower(parsed.Path)
+	switch host {
+	case "www.sogou.com", "sogou.com", "m.sogou.com", "weixin.sogou.com":
+		return strings.Contains(pathName, "/link")
+	case "www.baidu.com", "baidu.com", "m.baidu.com":
+		return strings.Contains(pathName, "/link")
+	case "www.bing.com", "cn.bing.com", "bing.com":
+		return strings.Contains(pathName, "/ck/")
+	case "m.so.com", "www.so.com", "so.com":
+		return strings.Contains(pathName, "/jump")
+	}
+	return false
+}
+
 func skipEngineResult(raw string) bool {
+	if isResultRedirect(raw) {
+		return false
+	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return true
@@ -579,7 +748,7 @@ func decodeJSString(value string) string {
 
 func mergeHits(groups ...[]Hit) []Hit {
 	seen := map[string]struct{}{}
-	out := make([]Hit, 0, 5)
+	out := make([]Hit, 0, 8)
 	for _, group := range groups {
 		for _, hit := range group {
 			key := strings.ToLower(hit.URL)
@@ -588,7 +757,7 @@ func mergeHits(groups ...[]Hit) []Hit {
 			}
 			seen[key] = struct{}{}
 			out = append(out, hit)
-			if len(out) == 5 {
+			if len(out) == 8 {
 				return out
 			}
 		}

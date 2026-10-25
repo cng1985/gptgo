@@ -68,12 +68,13 @@ type Client struct {
 	sogouURL       string
 	soURL          string
 	toutiaoURL     string
+	weixinURL      string
 }
 
 func New(cfg *config.Config) *Client {
 	client := &Client{
 		provider:   "duckduckgo",
-		timeout:    12 * time.Second,
+		timeout:    20 * time.Second,
 		fetchPages: true,
 		duckURL:    "https://html.duckduckgo.com/html/",
 		liteURL:    "https://lite.duckduckgo.com/lite/",
@@ -87,6 +88,7 @@ func New(cfg *config.Config) *Client {
 		sogouURL:   "https://www.sogou.com/web",
 		soURL:      "https://m.so.com/s",
 		toutiaoURL: "https://so.toutiao.com/search",
+		weixinURL:  "https://weixin.sogou.com/weixin",
 	}
 	if cfg != nil {
 		if provider := strings.ToLower(strings.TrimSpace(cfg.Search.Provider)); provider != "" {
@@ -111,15 +113,15 @@ func (c *Client) Search(ctx context.Context, query string) (Result, error) {
 	}
 	budget := c.timeout
 	if budget <= 0 {
-		budget = 12 * time.Second
+		budget = 20 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
-	discoverBudget := budget * 2 / 3
-	if discoverBudget < 3*time.Second && budget >= 3*time.Second {
-		discoverBudget = 3 * time.Second
+	discoverBudget := budget * 2 / 5
+	if discoverBudget > 8*time.Second {
+		discoverBudget = 8 * time.Second
 	}
-	if discoverBudget > budget {
+	if discoverBudget < time.Second || discoverBudget > budget {
 		discoverBudget = budget
 	}
 	discoverCtx, cancelDiscover := context.WithTimeout(ctx, discoverBudget)
@@ -131,8 +133,22 @@ func (c *Client) Search(ctx context.Context, query string) (Result, error) {
 	if ctx.Err() == nil {
 		c.enrich(ctx, query, result.Hits)
 	}
-	result.Notes = formatNotes(result.Hits)
+	result.Notes = notesFrom(result.Hits)
 	return result, nil
+}
+
+// notesFrom 有正文时只把正文交给模型。摘要里的数字经常是旧闻，不能拿来覆盖刚打开的页面。
+func notesFrom(hits []Hit) string {
+	chosen := make([]Hit, 0, len(hits))
+	for _, hit := range hits {
+		if strings.TrimSpace(hit.Excerpt) != "" {
+			chosen = append(chosen, hit)
+		}
+	}
+	if len(chosen) == 0 {
+		chosen = hits
+	}
+	return formatNotes(chosen)
 }
 
 func (c *Client) discover(ctx context.Context, query string) (Result, error) {
@@ -571,7 +587,7 @@ func (c *Client) hostAllowed(host string) bool {
 	switch host {
 	case "html.duckduckgo.com", "lite.duckduckgo.com", "api.duckduckgo.com", "zh.wikipedia.org", "en.wikipedia.org",
 		"api.bing.microsoft.com", "www.bing.com", "cn.bing.com", "api.tavily.com",
-		"m.baidu.com", "www.baidu.com", "www.sogou.com", "sogou.com",
+		"m.baidu.com", "www.baidu.com", "www.sogou.com", "sogou.com", "m.sogou.com", "weixin.sogou.com",
 		"m.so.com", "www.so.com", "so.toutiao.com":
 		return true
 	}
