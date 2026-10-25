@@ -100,6 +100,11 @@ defineProps({
       <path d="M12 16V5" />
       <path d="M17 16v-4" />
     </template>
+    <template v-else-if="name === 'code'">
+      <path d="M9 8 5 12l4 4" />
+      <path d="M15 8l4 4-4 4" />
+      <path d="M13 6.5 11 17.5" />
+    </template>
     <template v-else-if="name === 'plug'">
       <path d="M9 7V3.5M15 7V3.5" />
       <path d="M8 7h8v5a4 4 0 0 1-8 0V7z" />

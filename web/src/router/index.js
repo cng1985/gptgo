@@ -9,6 +9,7 @@ import BillingView from '../views/BillingView.vue'
 import UsageView from '../views/UsageView.vue'
 import AgentView from '../views/AgentView.vue'
 import ToolsView from '../views/ToolsView.vue'
+import SkillView from '../views/SkillView.vue'
 import { ensureSession } from '../stores/chat'
 
 export const router = createRouter({
@@ -24,6 +25,7 @@ export const router = createRouter({
         { path: 'c/:id', name: 'conversation', component: ChatView },
         { path: 'workspace', name: 'workspace', component: WorkspaceView },
         { path: 'agents', name: 'agents', component: AgentView },
+        { path: 'skills', name: 'skills', component: SkillView },
         { path: 'tools', name: 'tools', component: ToolsView },
         { path: 'bi', name: 'bi', component: ChatBIView },
         { path: 'datasources', name: 'datasources', component: DatasourceView },

@@ -51,11 +51,19 @@
 | `POST /api/mcp/search` | 分页搜索当前账号的 MCP 服务 |
 | `POST /api/mcp/delete` | 删除 MCP 服务 |
 | `POST /api/mcp/tools` | 连接 MCP 并返回它提供的工具 |
+| `POST /api/skill/create` | 创建技能，运行环境为 `python`、`node` 或 `bash` |
+| `POST /api/skill/update` | 修改技能 |
+| `POST /api/skill/one` | 技能详情，包含脚本 |
+| `POST /api/skill/search` | 分页搜索当前账号的技能 |
+| `POST /api/skill/delete` | 删除技能 |
+| `POST /api/skill/run` | 试运行脚本。可传未保存的 `runtime`、`script` 和 `input`；只传 `id` 时运行已保存的脚本 |
 | `GET /health/live` | 存活 |
 | `GET /health/ready` | 数据库可访问 |
 
 流式事件为 `meta`、`search`、`thinking`、`tool`、`delta`、`done`、`error`。请求带 `web_search: true` 时先发 `search`。它的 `status` 是 `running`、`done`、`empty` 或 `error`，完成时带 `sources`。助手消息的 `sources` 保存标题、链接和摘要。`tool` 事件带上工具名、参数、状态和结果。助手消息的 `tools` 字段保存这一轮调用。标识以十进制字符串传输。新建对话可以带 `agent_id`，之后的回答会使用该智能体的设定。对话详情里的 `web_search` 记住输入框上的联网开关。
 
 `POST /api/agent/draft` 接收 `prompt` 和 `model`。成功时 `data` 包含名称、简介、设定、模型、开场白和建议问题，不会写入数据库。选择内置助手，或没有模型密钥时，在本地生成。描述里点名 DeepSeek 或 MiniMax 时，草稿里的模型会改成对应项。确认后仍走 `POST /api/agent/create`。
+
+`POST /api/skill/create` 接收显示名称、调用名、说明、运行环境、脚本和超时秒数。调用名是小写字母开头的标识，不能占用内置工具或 MCP 工具名。参数结构留空时使用默认 JSON Schema，里面有一个 `input` 字符串。已启用的技能会进入对话的工具目录。模型只能传入 JSON 参数，不能改脚本。`POST /api/skill/run` 的 `input` 必须是 JSON 对象，成功时 `data` 包含 `ok`、`exit_code`、`stdout`、`stderr` 和 `duration_ms`。脚本超时、解释器不存在或非零退出仍返回这条结果，用 `ok: false` 表示。
 
 `POST /api/ask` 读取当前 SQLite 里的每一张业务表，而不是一份写死的表白名单。命中问数时，`data.chart` 带上图表类型、列、行，以及本次读到的全部表。图表类型可以是 `bar`、`line`、`pie`、`metric` 或 `table`。`data.answer` 是结论文字。`data.thinking_mode` 与 `data.thinking` 对应该次问数的思考模式：不思考是一句读表说明，轻量思考多一段推理，深度思考再附上实际查询。密码哈希和登录令牌只显示为「已隐藏」。问数只执行单条只读 `SELECT`。没有识别成问数时 `matched` 为 false，不会查询。
