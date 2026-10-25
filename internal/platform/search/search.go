@@ -144,19 +144,32 @@ func (c *Client) duck(ctx context.Context, query string) (Result, error) {
 }
 
 func (c *Client) duckHTML(ctx context.Context, query string) ([]Hit, error) {
-	form := url.Values{}
-	form.Set("q", query)
-	form.Set("kl", "cn-zh")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.duckURL, strings.NewReader(form.Encode()))
+	// POST 会落到验证页并返回 202，页面里没有结果。GET 才能拿到 result__a。
+	parsed, err := url.Parse(c.duckURL)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	values := parsed.Query()
+	values.Set("q", query)
+	values.Set("kl", "cn-zh")
+	parsed.RawQuery = values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 	raw, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
-	return parseDuckHTML(string(raw)), nil
+	body := string(raw)
+	if challengePage(body) {
+		return nil, fmt.Errorf("检索服务要求验证")
+	}
+	return parseDuckHTML(body), nil
+}
+
+func challengePage(body string) bool {
+	return strings.Contains(body, "anomaly-modal") && !strings.Contains(body, "result__a")
 }
 
 func (c *Client) duckJSON(ctx context.Context, query string) ([]Hit, error) {
@@ -263,7 +276,7 @@ func (c *Client) do(req *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("检索请求失败")
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if resp.StatusCode == http.StatusAccepted || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("检索服务返回 %d", resp.StatusCode)
 	}
 	return raw, nil
