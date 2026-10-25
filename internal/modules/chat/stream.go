@@ -31,6 +31,10 @@ type WebSearcher interface {
 	Search(ctx context.Context, query string) (search.Result, error)
 }
 
+type PageReader interface {
+	Read(ctx context.Context, rawURL string) (search.Page, error)
+}
+
 const maxToolRounds = 3
 
 type toolTrace struct {
@@ -149,6 +153,9 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 				default:
 					data.SearchNotes = result.Notes
 					sources = result.Hits
+					if raw, err := json.Marshal(result.Hits); err == nil {
+						rememberSources(c, resource, data.ConversationID, data.AssistantMessageID, string(raw))
+					}
 					write("search", map[string]any{"status": "done", "query": query, "sources": result.Hits})
 				}
 			}
@@ -312,6 +319,17 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 			"status":          status,
 		})
 	}
+}
+
+func rememberSources(c *gin.Context, resource *Resource, conversationID, messageID int64, sources string) {
+	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 3*time.Second)
+	defer cancel()
+	if _, ok := domain.ScopeFrom(saveCtx); !ok {
+		if scope, ok := domain.ScopeFrom(c.Request.Context()); ok {
+			saveCtx = domain.WithScope(saveCtx, scope)
+		}
+	}
+	_ = resource.RememberSources(saveCtx, conversationID, messageID, sources)
 }
 
 func formatID(id int64) string {

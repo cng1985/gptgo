@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 func TestParseDuckHTMLKeepsPublicLinks(t *testing.T) {
@@ -277,6 +279,42 @@ func TestReadPageKeepsExcerptAndBlocksPrivate(t *testing.T) {
 	blocked.http = blocked.newHTTP()
 	if _, err := blocked.readPage(context.Background(), server.URL+"/page"); err == nil {
 		t.Fatal("未允许回环时不应读取测试页")
+	}
+}
+
+func TestReadDecodesGBKAndRejectsPrivate(t *testing.T) {
+	page := `<html><meta charset="gbk"><title>上海天气</title><p>今日上海晴，最高 26 度，最低 18 度，东北风 3 级。空气质量为良，适合户外活动，傍晚会转多云。</p></html>`
+	encoded, err := simplifiedchinese.GBK.NewEncoder().String(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=gbk")
+		io.WriteString(w, encoded)
+	}))
+	defer server.Close()
+
+	client := testClient(server.URL)
+	text, title, err := client.readDocument(context.Background(), server.URL+"/weather", detailExcerpt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if title != "上海天气" || !strings.Contains(text, "26 度") {
+		t.Fatalf("明细: title=%q text=%q", title, text)
+	}
+	if _, err := client.Read(context.Background(), "http://10.1.2.3/secret"); err == nil {
+		t.Fatal("明细接口不应读取内网")
+	}
+	if _, err := client.Read(context.Background(), "javascript:alert(1)"); err == nil {
+		t.Fatal("明细接口只接受网页地址")
+	}
+}
+
+func TestReadableTextDropsFooterAndKeepsForecast(t *testing.T) {
+	raw := "<p>当前位置：首页 > 上海市气象局 > 气象服务 > 今日天气</p><p>主办:上海市气象局办公室 版权所有：上海市气象局 ICP备案号：京ICP备05004897号</p><p>今日上海晴，最高 26 度，最低 18 度，东北风 3 级。空气质量为良，适合户外活动。</p>"
+	got := readableText(raw, detailExcerpt)
+	if strings.Contains(got, "版权") || strings.Contains(got, "ICP") || strings.Contains(got, "当前位置") || !strings.Contains(got, "26 度") {
+		t.Fatalf("正文应去掉页脚并保留预报: %q", got)
 	}
 }
 

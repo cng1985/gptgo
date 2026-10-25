@@ -240,6 +240,54 @@ func (r *Resource) Complete(ctx context.Context, request *ChatCompleteRequest) (
 	return r.repo.Complete(ctx, request)
 }
 
+func (r *Resource) RememberSources(ctx context.Context, conversationID, messageID int64, sources string) error {
+	if err := requireActor(ctx); err != nil {
+		return err
+	}
+	sources = strings.TrimSpace(sources)
+	if conversationID <= 0 || messageID <= 0 || sources == "" || !json.Valid([]byte(sources)) || len(sources) > 20000 {
+		return apperr.Invalid("检索结果无法保存")
+	}
+	return r.repo.SaveSources(ctx, conversationID, messageID, sources)
+}
+
+func (r *Resource) ReadSource(ctx context.Context, request *SourceReadRequest, reader PageReader) (response.Response[SourceReadResponse], error) {
+	var zero response.Response[SourceReadResponse]
+	if err := requireActor(ctx); err != nil {
+		return zero, err
+	}
+	if request == nil || request.MessageID <= 0 || strings.TrimSpace(request.URL) == "" {
+		return zero, apperr.Invalid("请选择一条检索结果")
+	}
+	if reader == nil {
+		return zero, apperr.Unavailable("联网检索不可用")
+	}
+	hit, err := r.repo.FindSource(ctx, request.MessageID, strings.TrimSpace(request.URL))
+	if err != nil {
+		return zero, err
+	}
+	page, err := reader.Read(ctx, hit.URL)
+	if err != nil || strings.TrimSpace(page.Excerpt) == "" {
+		return zero, apperr.Unavailable("没有读到这篇网页的正文")
+	}
+	excerpt := clipRunes(page.Excerpt, 1800)
+	if err := r.repo.SaveSourceExcerpt(ctx, request.MessageID, hit.URL, excerpt); err != nil {
+		return zero, err
+	}
+	title := strings.TrimSpace(hit.Title)
+	if title == "" {
+		title = strings.TrimSpace(page.Title)
+	}
+	return response.OK(SourceReadResponse{
+		MessageID: request.MessageID,
+		Title:     title,
+		URL:       hit.URL,
+		Snippet:   hit.Snippet,
+		Excerpt:   excerpt,
+		Engine:    hit.Engine,
+	}), nil
+}
+
 func (r *Resource) AskOnce(ctx context.Context, request *AskRequest) (response.Response[AskResponse], error) {
 	var zero response.Response[AskResponse]
 	if err := requireActor(ctx); err != nil {

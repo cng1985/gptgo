@@ -25,6 +25,7 @@ func (c *Controller) Register(api *gin.RouterGroup) {
 	api.POST("/conversation/clear", c.clear)
 	api.POST("/message/search", c.messages)
 	api.POST("/chat/stream", c.stream)
+	api.POST("/chat/source", c.readSource)
 	api.POST("/chat/optimize", c.optimize)
 	api.POST("/ask", c.ask)
 }
@@ -131,6 +132,21 @@ func (c *Controller) messages(ctx *gin.Context) {
 
 func (c *Controller) stream(ctx *gin.Context) {
 	ServeStream(ctx, c.resource, c.models, c.tools)
+}
+
+func (c *Controller) readSource(ctx *gin.Context) {
+	var request SourceReadRequest
+	if err := response.BindJSON(ctx, &request); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	reader, _ := c.models.(PageReader)
+	result, err := c.resource.ReadSource(ctx.Request.Context(), &request, reader)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
 }
 
 func (c *Controller) ask(ctx *gin.Context) {

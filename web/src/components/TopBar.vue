@@ -146,7 +146,7 @@ onUnmounted(() => {
         <div v-if="settingsOpen" class="menu settings-menu">
           <p><strong>模型来源</strong></p>
           <p class="muted">{{ chat.account.provider_ready ? '已连接外部模型接口' : '当前使用内置助手。配置 APP_AI_API_KEY 后可接入 OpenAI 兼容接口。' }}</p>
-          <p class="muted">打开输入框里的「联网」后，问题会先检索公开网页，再阅读靠前的结果。默认是 DuckDuckGo 和中文维基百科；没有网页结果时，会再查必应、百度、搜狗、360 搜索和头条搜索。</p>
+          <p class="muted">打开输入框里的「联网」后，问题会同时检索 DuckDuckGo、中文维基百科、必应、百度、搜狗、360 搜索和头条搜索。中文问题优先采用这些搜索引擎的结果。摘要里没有答案时，点开一条结果即可读取网页正文。</p>
           <p><strong>快捷键</strong></p>
           <p class="muted">Ctrl K 新建对话。Enter 发送，Shift + Enter 换行。</p>
           <button v-if="!confirmClear" type="button" class="danger" @click="confirmClear = true">清空所有对话</button>

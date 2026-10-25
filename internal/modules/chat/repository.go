@@ -2,15 +2,18 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
 	"gptgo/internal/platform/domain"
 	apperr "gptgo/internal/platform/errors"
 	"gptgo/internal/platform/response"
+	"gptgo/internal/platform/search"
 )
 
 type Repository struct {
@@ -261,14 +264,21 @@ func (r *Repository) Complete(ctx context.Context, request *ChatCompleteRequest)
 		if err := tx.Where("id = ? AND account_id = ?", request.ConversationID, owner).First(&conversation).Error; err != nil {
 			return err
 		}
+		var current Message
+		if err := tx.Where("id = ? AND conversation_id = ? AND role = ?", request.AssistantMessageID, request.ConversationID, "assistant").First(&current).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperr.NotFound("消息不存在")
+			}
+			return err
+		}
 		res := tx.Model(&Message{}).
-			Where("id = ? AND conversation_id = ? AND role = ?", request.AssistantMessageID, request.ConversationID, "assistant").
+			Where("id = ?", current.ID).
 			Updates(map[string]any{
 				"content":    request.Content,
 				"thinking":   request.Thinking,
 				"chart":      request.Chart,
 				"tools":      request.Tools,
-				"sources":    request.Sources,
+				"sources":    mergeSourceExcerpts(current.Sources, request.Sources),
 				"status":     request.Status,
 				"updated_at": time.Now().UTC(),
 			})
@@ -569,6 +579,150 @@ func messageIDs(rows []Message) []int64 {
 func likePattern(keyword string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return "%" + replacer.Replace(keyword) + "%"
+}
+
+func (r *Repository) SaveSources(ctx context.Context, conversationID, messageID int64, sources string) error {
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return err
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&Conversation{}).Where("id = ? AND account_id = ?", conversationID, owner).Count(&count).Error; err != nil {
+		return mapDB(err)
+	}
+	if count == 0 {
+		return apperr.NotFound("消息不存在")
+	}
+	res := r.db.WithContext(ctx).Model(&Message{}).
+		Where("id = ? AND conversation_id = ? AND role = ?", messageID, conversationID, "assistant").
+		Updates(map[string]any{"sources": sources, "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return mapDB(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperr.NotFound("消息不存在")
+	}
+	return nil
+}
+
+func (r *Repository) FindSource(ctx context.Context, messageID int64, rawURL string) (search.Hit, error) {
+	var zero search.Hit
+	message, err := r.ownedAssistant(ctx, messageID)
+	if err != nil {
+		return zero, err
+	}
+	rawURL = strings.TrimSpace(rawURL)
+	for _, hit := range decodeSources(message.Sources) {
+		if hit.URL == rawURL {
+			return hit, nil
+		}
+	}
+	return zero, apperr.Invalid("这条结果不在当前回答的检索列表里")
+}
+
+func (r *Repository) SaveSourceExcerpt(ctx context.Context, messageID int64, rawURL, excerpt string) error {
+	message, err := r.ownedAssistant(ctx, messageID)
+	if err != nil {
+		return err
+	}
+	hits := decodeSources(message.Sources)
+	found := false
+	for i := range hits {
+		if hits[i].URL != rawURL {
+			continue
+		}
+		hits[i].Excerpt = excerpt
+		found = true
+		break
+	}
+	if !found {
+		return apperr.Invalid("这条结果不在当前回答的检索列表里")
+	}
+	raw, err := json.Marshal(hits)
+	if err != nil {
+		return apperr.Internal(err)
+	}
+	res := r.db.WithContext(ctx).Model(&Message{}).Where("id = ?", message.ID).
+		Updates(map[string]any{"sources": string(raw), "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return mapDB(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperr.NotFound("消息不存在")
+	}
+	return nil
+}
+
+func (r *Repository) ownedAssistant(ctx context.Context, messageID int64) (Message, error) {
+	var message Message
+	owner, err := ownerID(ctx)
+	if err != nil {
+		return message, err
+	}
+	if messageID <= 0 {
+		return message, apperr.Invalid("请选择一条检索结果")
+	}
+	if err := r.db.WithContext(ctx).Where("id = ? AND role = ?", messageID, "assistant").First(&message).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return message, apperr.NotFound("消息不存在")
+		}
+		return message, mapDB(err)
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&Conversation{}).Where("id = ? AND account_id = ?", message.ConversationID, owner).Count(&count).Error; err != nil {
+		return message, mapDB(err)
+	}
+	if count == 0 {
+		return message, apperr.NotFound("消息不存在")
+	}
+	return message, nil
+}
+
+type storedSource struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+	Excerpt string `json:"excerpt,omitempty"`
+	Engine  string `json:"engine,omitempty"`
+}
+
+func decodeSources(raw string) []search.Hit {
+	var hits []search.Hit
+	if strings.TrimSpace(raw) == "" || json.Unmarshal([]byte(raw), &hits) != nil {
+		return nil
+	}
+	return hits
+}
+
+func mergeSourceExcerpts(stored, incoming string) string {
+	incoming = strings.TrimSpace(incoming)
+	if incoming == "" {
+		return incoming
+	}
+	var next []storedSource
+	if json.Unmarshal([]byte(incoming), &next) != nil {
+		return incoming
+	}
+	var prev []storedSource
+	if json.Unmarshal([]byte(stored), &prev) == nil {
+		byURL := map[string]string{}
+		for _, hit := range prev {
+			if hit.Excerpt != "" {
+				byURL[hit.URL] = hit.Excerpt
+			}
+		}
+		for i := range next {
+			old := byURL[next[i].URL]
+			if utf8.RuneCountInString(old) > utf8.RuneCountInString(next[i].Excerpt) {
+				next[i].Excerpt = old
+			}
+		}
+	}
+	raw, err := json.Marshal(next)
+	if err != nil {
+		return incoming
+	}
+	return string(raw)
 }
 
 func ownerID(ctx context.Context) (int64, error) {

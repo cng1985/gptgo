@@ -105,7 +105,7 @@ function toggleMic() {
             :class="{ on: chat.webSearch }"
             type="button"
             :aria-pressed="chat.webSearch"
-            :title="chat.webSearch ? '已开启联网。没有网页结果时，会再查必应、百度、搜狗、360 和头条搜索' : '联网搜索'"
+            :title="chat.webSearch ? '已开启联网。会同时查必应、百度、搜狗、360 和头条；摘要不够时可以点开结果读取正文' : '联网搜索'"
             @click="toggleWebSearch"
           >
             <Icon name="globe" :size="15" />

@@ -345,14 +345,29 @@ button:disabled { cursor: default; }
   line-height: 1.4;
   padding-bottom: 6px;
 }
+.search-hint {
+  margin: 0 2px 4px;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
 .search-hit {
-  display: block;
   padding: 7px 2px 8px;
   border-top: 1px solid var(--line);
   color: inherit;
-  text-decoration: none;
 }
-.search-hit:hover .search-hit-title { text-decoration: underline; }
+.search-hit-main {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.search-hit-main:hover .search-hit-title { text-decoration: underline; }
 .search-hit-title, .search-hit-meta, .search-hit-snippet { display: block; }
 .search-hit-title {
   color: var(--text);
@@ -370,6 +385,37 @@ button:disabled { cursor: default; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.search-hit-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+.search-hit-actions button,
+.search-hit-actions a {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--green);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+.search-hit-actions button:hover,
+.search-hit-actions a:hover { text-decoration: underline; }
+.search-hit-detail {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  max-height: 240px;
+  overflow: auto;
+}
+.search-hit-detail p { margin: 0; white-space: pre-wrap; }
 .thinking { margin-bottom: 8px; color: var(--text-2); }
 .thinking summary { cursor: pointer; }
 .thinking p { white-space: pre-wrap; margin: 8px 0 0; font-size: 13px; }

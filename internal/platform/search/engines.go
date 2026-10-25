@@ -15,7 +15,7 @@ type engineJob struct {
 	run func(context.Context, string) ([]Hit, error)
 }
 
-// indexBudget 给网页索引留一段短超时，剩下的时间留给搜索引擎回退。
+// indexBudget 给网页索引一段较短的时间。中文搜索引擎同时进行，索引卡住时不会占满整段检索。
 func indexBudget(ctx context.Context) time.Duration {
 	const cap = 3500 * time.Millisecond
 	deadline, ok := ctx.Deadline()
