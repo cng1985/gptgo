@@ -5,7 +5,9 @@ import (
 	"html"
 	"net"
 	"net/url"
+	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -14,6 +16,19 @@ var (
 	resultAnchor = regexp.MustCompile(`(?is)<a\b[^>]*class\s*=\s*['"][^'"]*(?:result__a|result-link)[^'"]*['"][^>]*>.*?</a>`)
 	resultBlurb  = regexp.MustCompile(`(?is)<(?:a|td|span)\b[^>]*class\s*=\s*['"][^'"]*(?:result__snippet|result-snippet)[^'"]*['"][^>]*>(.*?)</(?:a|td|span)>`)
 	hrefAttr     = regexp.MustCompile(`(?i)\bhref\s*=\s*['"]([^'"]*)['"]`)
+	htmlComment  = regexp.MustCompile(`(?s)<!--.*?-->`)
+	bingTitle    = regexp.MustCompile(`(?is)<h2\b[^>]*>\s*<a\b[^>]*\bhref\s*=\s*['"]([^'"]+)['"][^>]*>(.*?)</a>`)
+	bingSnippet  = regexp.MustCompile(`(?is)<p\b[^>]*\bb_lineclamp\d\b[^>]*>(.*?)</p>`)
+	baiduMu      = regexp.MustCompile(`"mu"\s*:\s*"((?:\\.|[^"\\])*)"`)
+	baiduSText   = regexp.MustCompile(`(?s)<!--s-text-->(.*?)<!--/s-text-->`)
+	baiduSummary = regexp.MustCompile(`"text"\s*:\s*"((?:\\.|[^"\\])*)"`)
+	sogouAnchor  = regexp.MustCompile(`(?is)<h3\b[^>]*\bvr-title\b[^>]*>\s*<a\b([^>]*)>(.*?)</a>`)
+	sogouSnippet = regexp.MustCompile(`(?is)<(?:p|span)\b[^>]*class\s*=\s*['"][^'"]*(?:space-txt|star-wiki)[^'"]*['"][^>]*>(.*?)</(?:p|span)>`)
+	soTitle      = regexp.MustCompile(`(?is)<h3\b[^>]*\bres-title\b[^>]*>(.*?)</h3>`)
+	soSnippet    = regexp.MustCompile(`(?is)<p\b[^>]*\bsummary\b[^>]*>(.*?)</p>`)
+	toutiaoTitle = regexp.MustCompile(`"title":"((?:\\.|[^"\\])*)"`)
+	toutiaoText  = regexp.MustCompile(`"summary_text":"((?:\\.|[^"\\])*)"`)
+	toutiaoURL   = regexp.MustCompile(`"url":"((?:\\.|[^"\\])*)"`)
 )
 
 func parseDuckHTML(body string) []Hit {
@@ -235,6 +250,7 @@ func unwrapDuck(raw string) string {
 }
 
 func stripTags(value string) string {
+	value = htmlComment.ReplaceAllString(value, "")
 	var b strings.Builder
 	in := false
 	for _, r := range value {
@@ -293,6 +309,260 @@ func clip(text string, max int) string {
 		return string(rs)
 	}
 	return string(rs[:max])
+}
+
+func tagEngine(hits []Hit, engine string) []Hit {
+	if engine == "" {
+		return hits
+	}
+	for i := range hits {
+		if hits[i].Engine == "" {
+			hits[i].Engine = engine
+		}
+	}
+	return hits
+}
+
+func parseBingHTML(body string) []Hit {
+	locs := bingTitle.FindAllStringSubmatchIndex(body, 8)
+	hits := make([]Hit, 0, len(locs))
+	for _, loc := range locs {
+		rawURL := html.UnescapeString(body[loc[2]:loc[3]])
+		title := body[loc[4]:loc[5]]
+		window := after(body, loc[1], 700)
+		snippet := ""
+		if match := bingSnippet.FindStringSubmatch(window); len(match) > 1 {
+			snippet = match[1]
+		}
+		hit, ok := acceptEngineHit(title, rawURL, snippet)
+		if ok {
+			hits = append(hits, hit)
+		}
+		if len(hits) == 5 {
+			break
+		}
+	}
+	return tagEngine(hits, "必应")
+}
+
+func parseBaiduHTML(body string) []Hit {
+	locs := baiduMu.FindAllStringSubmatchIndex(body, 12)
+	hits := make([]Hit, 0, len(locs))
+	for _, loc := range locs {
+		rawURL := decodeJSString(body[loc[2]:loc[3]])
+		window := after(body, loc[1], 8000)
+		if next := strings.Index(window, `"mu":`); next > 0 {
+			window = window[:next]
+		}
+		title := ""
+		if match := baiduSText.FindStringSubmatch(window); len(match) > 1 {
+			title = match[1]
+		}
+		snippet := ""
+		if match := baiduSummary.FindStringSubmatch(window); len(match) > 1 {
+			snippet = decodeJSString(match[1])
+		}
+		hit, ok := acceptEngineHit(title, rawURL, snippet)
+		if ok {
+			hits = append(hits, hit)
+		}
+		if len(hits) == 5 {
+			break
+		}
+	}
+	return tagEngine(hits, "百度")
+}
+
+func parseSogouHTML(body string) []Hit {
+	locs := sogouAnchor.FindAllStringSubmatchIndex(body, 10)
+	hits := make([]Hit, 0, len(locs))
+	for _, loc := range locs {
+		rawURL := sogouURL(body[loc[2]:loc[3]])
+		title := body[loc[4]:loc[5]]
+		window := after(body, loc[1], 1600)
+		if next := strings.Index(window, "vr-title"); next > 0 {
+			window = window[:next]
+		}
+		snippet := ""
+		if match := sogouSnippet.FindStringSubmatch(window); len(match) > 1 {
+			snippet = match[1]
+		}
+		hit, ok := acceptEngineHit(title, rawURL, snippet)
+		if ok {
+			hits = append(hits, hit)
+		}
+		if len(hits) == 5 {
+			break
+		}
+	}
+	return tagEngine(hits, "搜狗")
+}
+
+func parseSoHTML(body string) []Hit {
+	const marker = `data-pcurl="`
+	hits := make([]Hit, 0, 5)
+	from := 0
+	for len(hits) < 5 {
+		rel := strings.Index(body[from:], marker)
+		if rel < 0 {
+			break
+		}
+		start := from + rel + len(marker)
+		rest := body[start:]
+		end := strings.IndexByte(rest, '"')
+		if end < 0 {
+			break
+		}
+		rawURL := html.UnescapeString(rest[:end])
+		window := rest[end:]
+		if len(window) > 2000 {
+			window = window[:2000]
+		}
+		if next := strings.Index(window, marker); next > 0 {
+			window = window[:next]
+		}
+		title := ""
+		if match := soTitle.FindStringSubmatch(window); len(match) > 1 {
+			title = match[1]
+		}
+		snippet := ""
+		if match := soSnippet.FindStringSubmatch(window); len(match) > 1 {
+			snippet = match[1]
+		}
+		if hit, ok := acceptEngineHit(title, rawURL, snippet); ok {
+			hits = append(hits, hit)
+		}
+		from = start
+	}
+	return tagEngine(hits, "360搜索")
+}
+
+func parseToutiaoHTML(body string) []Hit {
+	locs := toutiaoTitle.FindAllStringSubmatchIndex(body, 24)
+	hits := make([]Hit, 0, len(locs))
+	seen := map[string]struct{}{}
+	for _, loc := range locs {
+		title := decodeJSString(body[loc[2]:loc[3]])
+		if toutiaoNoise(title) {
+			continue
+		}
+		window := after(body, loc[1], 2000)
+		match := toutiaoURL.FindStringSubmatch(window)
+		if len(match) < 2 {
+			continue
+		}
+		rawURL := decodeJSString(match[1])
+		snippet := ""
+		if text := toutiaoText.FindStringSubmatch(window); len(text) > 1 {
+			snippet = decodeJSString(text[1])
+		}
+		hit, ok := acceptEngineHit(title, rawURL, snippet)
+		if !ok {
+			continue
+		}
+		if _, ok := seen[hit.URL]; ok {
+			continue
+		}
+		seen[hit.URL] = struct{}{}
+		hits = append(hits, hit)
+		if len(hits) == 5 {
+			break
+		}
+	}
+	return tagEngine(hits, "头条搜索")
+}
+
+func after(body string, start, width int) string {
+	if start < 0 || start >= len(body) {
+		return ""
+	}
+	end := start + width
+	if end > len(body) {
+		end = len(body)
+	}
+	return body[start:end]
+}
+
+func sogouURL(attrs string) string {
+	if link := attrLoose(attrs, "linkurl"); absoluteHTTP(link) {
+		return link
+	}
+	href := attrLoose(attrs, "href")
+	if strings.HasPrefix(href, "//") {
+		href = "https:" + href
+	}
+	if absoluteHTTP(href) {
+		return href
+	}
+	return ""
+}
+
+func absoluteHTTP(raw string) bool {
+	return strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://")
+}
+
+func attrLoose(tag, name string) string {
+	pattern := `(?i)(?:^|[\s])` + regexp.QuoteMeta(name) + `\s*=\s*(?:'([^']*)'|"([^"]*)"|([^\s"'=<>` + "`" + `]+))`
+	match := regexp.MustCompile(pattern).FindStringSubmatch(tag)
+	if len(match) == 0 {
+		return ""
+	}
+	for _, part := range match[1:] {
+		if part != "" {
+			return html.UnescapeString(part)
+		}
+	}
+	return ""
+}
+
+func acceptEngineHit(title, rawURL, snippet string) (Hit, bool) {
+	hit, ok := cleanHit(title, rawURL, snippet)
+	if !ok || skipEngineResult(hit.URL) {
+		return Hit{}, false
+	}
+	return hit, true
+}
+
+func skipEngineResult(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return true
+	}
+	host := strings.ToLower(parsed.Hostname())
+	switch host {
+	case "bing.com", "www.bing.com", "cn.bing.com",
+		"baidu.com", "www.baidu.com", "m.baidu.com",
+		"sogou.com", "www.sogou.com", "m.sogou.com",
+		"so.com", "www.so.com", "m.so.com",
+		"duckduckgo.com", "www.duckduckgo.com", "html.duckduckgo.com", "lite.duckduckgo.com",
+		"so.toutiao.com", "toutiaoimg.com":
+		return true
+	}
+	if strings.Contains(host, "toutiaoimg.com") || strings.Contains(host, "byteimg.com") || strings.Contains(host, "recommend_list.baidu.com") {
+		return true
+	}
+	switch strings.ToLower(path.Ext(parsed.Path)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico":
+		return true
+	}
+	return false
+}
+
+func toutiaoNoise(title string) bool {
+	title = strings.TrimSpace(stripTags(title))
+	switch title {
+	case "", "资讯", "图片", "视频", "搜索", "网页", "更多", "站内", "热搜":
+		return true
+	}
+	return utf8.RuneCountInString(title) < 4
+}
+
+func decodeJSString(value string) string {
+	value = strings.ReplaceAll(value, `\/`, `/`)
+	if unquoted, err := strconv.Unquote(`"` + value + `"`); err == nil {
+		return unquoted
+	}
+	return value
 }
 
 func mergeHits(groups ...[]Hit) []Hit {

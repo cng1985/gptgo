@@ -39,6 +39,7 @@ ai:
   upstream_model: ""
   request_timeout: 120s
 search:
+  # duckduckgo 没有网页结果时，会再查必应、百度、搜狗、360 和头条。bing / tavily 需要 api_key。
   provider: duckduckgo
   api_key: ""
   timeout: 12s
