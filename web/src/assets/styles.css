@@ -329,22 +329,47 @@ button:disabled { cursor: default; }
   white-space: pre-wrap;
   line-height: 1.6;
 }
-.search-sources { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.search-sources a, .search-sources span {
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.search-panel {
+  margin-bottom: 10px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 14px;
   background: var(--bubble);
+  padding: 8px 10px 4px;
+}
+.search-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text-2);
-  padding: 4px 10px;
   font-size: 12px;
+  line-height: 1.4;
+  padding-bottom: 6px;
+}
+.search-hit {
+  display: block;
+  padding: 7px 2px 8px;
+  border-top: 1px solid var(--line);
+  color: inherit;
   text-decoration: none;
 }
-.search-sources a:hover { color: var(--text); border-color: var(--line-strong); }
-.search-sources .search-state { max-width: none; border: 0; background: transparent; padding: 4px 0; }
+.search-hit:hover .search-hit-title { text-decoration: underline; }
+.search-hit-title, .search-hit-meta, .search-hit-snippet { display: block; }
+.search-hit-title {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.search-hit-meta { margin-top: 1px; color: var(--text-3); font-size: 12px; }
+.search-hit-snippet {
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .thinking { margin-bottom: 8px; color: var(--text-2); }
 .thinking summary { cursor: pointer; }
 .thinking p { white-space: pre-wrap; margin: 8px 0 0; font-size: 13px; }

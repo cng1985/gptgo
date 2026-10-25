@@ -41,7 +41,7 @@ ai:
 search:
   provider: duckduckgo
   api_key: ""
-  timeout: 8s
+  timeout: 12s
 skillhub:
   base_url: https://skill.xfyun.cn
   token: ""

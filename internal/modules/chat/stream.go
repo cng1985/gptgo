@@ -132,7 +132,7 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 			write("search", map[string]any{"status": "running", "query": query})
 			searcher, ok := models.(WebSearcher)
 			if !ok {
-				data.SearchNotes = "本次联网检索没有返回结果。"
+				data.SearchNotes = search.UnavailableNote
 				write("search", map[string]any{"status": "error", "query": query})
 			} else {
 				result, err := searcher.Search(streamCtx, query)
@@ -140,7 +140,7 @@ func ServeStream(c *gin.Context, resource *Resource, models Streamer, tools Tool
 				case streamCtx.Err() != nil:
 					status = "stopped"
 				case err != nil || strings.TrimSpace(result.Notes) == "":
-					data.SearchNotes = "本次联网检索没有返回结果。"
+					data.SearchNotes = search.UnavailableNote
 					state := "empty"
 					if err != nil {
 						state = "error"

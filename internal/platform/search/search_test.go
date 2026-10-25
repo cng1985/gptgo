@@ -104,6 +104,7 @@ func TestClientMergesSourcesAndStaysOnAllowlist(t *testing.T) {
 	}
 
 	client.duckURL = "https://evil.example/html/"
+	client.liteURL = "https://evil.example/lite/"
 	client.duckAPI = "https://evil.example/json"
 	client.wikiZH = "https://evil.example/wiki"
 	client.wikiEN = "https://evil.example/wiki"
@@ -189,12 +190,112 @@ func TestDuckHTMLRejectsChallengePage(t *testing.T) {
 	}
 }
 
+func TestParseLiteDuckHTML(t *testing.T) {
+	body := `<a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.weather.com.cn%2Fweather%2F101020100.shtml&amp;rut=abc" class='result-link'>上海天气预报</a>
+<td class='result-snippet'>今日晴，最高 26 度。</td>`
+	hits := parseDuckHTML(body)
+	if len(hits) != 1 || hits[0].Title != "上海天气预报" || hits[0].URL != "https://www.weather.com.cn/weather/101020100.shtml" || hits[0].Snippet != "今日晴，最高 26 度。" {
+		t.Fatalf("Lite 结果: %#v", hits)
+	}
+}
+
+func TestWebIndexFallsBackToLite(t *testing.T) {
+	var sawMozilla bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/html/":
+			sawMozilla = strings.Contains(r.Header.Get("User-Agent"), "Mozilla/")
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `<div class="anomaly-modal__title">验证</div>`)
+		case "/lite/":
+			if !strings.Contains(r.Header.Get("User-Agent"), "Mozilla/") {
+				http.Error(w, "missing browser", http.StatusForbidden)
+				return
+			}
+			io.WriteString(w, `<a href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fweather" class='result-link'>上海天气</a><td class='result-snippet'>今日晴，最高 26 度</td>`)
+		case "/wiki", "/json":
+			io.WriteString(w, `{"query":{"pages":[]}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := testClient(server.URL)
+	result, err := client.Search(context.Background(), "上海今天天气")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawMozilla {
+		t.Fatal("网页检索应该使用浏览器标识，否则会被验证页拦住")
+	}
+	if len(result.Hits) != 1 || result.Hits[0].URL != "https://example.com/weather" || !strings.Contains(result.Notes, "26 度") {
+		t.Fatalf("Lite 回退: %#v", result)
+	}
+}
+
+func TestReadPageKeepsExcerptAndBlocksPrivate(t *testing.T) {
+	page := `<html><header><a>首页</a></header><style>.a{color:red}</style><script>var secret = "不要出现"</script><p>今日上海晴，最高 26 度，最低 18 度，东北风 3 级。空气质量为良，适合户外活动，傍晚会转多云。</p></html>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/page":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			io.WriteString(w, page)
+		case "/go":
+			http.Redirect(w, r, "http://10.1.2.3/secret", http.StatusFound)
+		case "/bin":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			io.WriteString(w, "binary")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := testClient(server.URL)
+	text, err := client.readPage(context.Background(), server.URL+"/page")
+	if err != nil || !strings.Contains(text, "26 度") || strings.Contains(text, "不要出现") || strings.Contains(text, "首页") {
+		t.Fatalf("摘录: %v %q", err, text)
+	}
+	hits := []Hit{{Title: "上海天气", URL: server.URL + "/page", Snippet: "短"}}
+	client.fetchPages = true
+	client.enrich(context.Background(), "上海今天天气", hits)
+	if !strings.Contains(hits[0].Excerpt, "26 度") || hits[0].Snippet != "短" {
+		t.Fatalf("阅读后应保留原摘要并写入摘录: %#v", hits[0])
+	}
+	if _, err := client.readPage(context.Background(), server.URL+"/go"); err == nil {
+		t.Fatal("跳转到内网应该失败")
+	}
+	if _, err := client.readPage(context.Background(), "http://10.1.2.3/secret"); err == nil {
+		t.Fatal("内网地址应该失败")
+	}
+	if _, err := client.readPage(context.Background(), server.URL+"/bin"); err == nil {
+		t.Fatal("非网页内容应该失败")
+	}
+	blocked := testClient(server.URL)
+	blocked.permitLoopback = false
+	blocked.http = blocked.newHTTP()
+	if _, err := blocked.readPage(context.Background(), server.URL+"/page"); err == nil {
+		t.Fatal("未允许回环时不应读取测试页")
+	}
+}
+
+func TestFocusExcerptStopsAtUnrelatedLines(t *testing.T) {
+	text := "上海今天晴，最高 26 度，最低 18 度，东北风 3 级。\n如何破解wifi密码 wifi密码怎么简单破解\n宫保鸡丁做法家常简单做法"
+	got := focusExcerpt("上海今天天气", "上海天气预报", text)
+	if !strings.Contains(got, "26 度") || strings.Contains(got, "wifi") || strings.Contains(got, "宫保鸡丁") {
+		t.Fatalf("摘录混入了无关推荐: %q", got)
+	}
+}
+
 func testClient(base string) *Client {
 	client := &Client{
 		provider:       "duckduckgo",
 		timeout:        3 * time.Second,
 		permitLoopback: true,
+		fetchPages:     false,
 		duckURL:        base + "/html/",
+		liteURL:        base + "/lite/",
 		duckAPI:        base + "/json",
 		wikiZH:         base + "/wiki",
 		wikiEN:         base + "/wiki",

@@ -105,7 +105,7 @@ function toggleMic() {
             :class="{ on: chat.webSearch }"
             type="button"
             :aria-pressed="chat.webSearch"
-            :title="chat.webSearch ? '已开启联网，发送时会检索公开网页' : '联网搜索'"
+            :title="chat.webSearch ? '已开启联网。发送后会检索公开网页，并阅读靠前的结果' : '联网搜索'"
             @click="toggleWebSearch"
           >
             <Icon name="globe" :size="15" />

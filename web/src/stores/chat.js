@@ -238,6 +238,7 @@ export async function send({ content, regenerateId, editId } = {}) {
     tools: [],
     sources: [],
     searchStatus: '',
+    searchQuery: '',
     status: 'streaming',
     attachments: [],
   }
@@ -252,6 +253,7 @@ export async function send({ content, regenerateId, editId } = {}) {
       chat.messages[assistantIndex].tools = []
       chat.messages[assistantIndex].sources = []
       chat.messages[assistantIndex].searchStatus = ''
+      chat.messages[assistantIndex].searchQuery = ''
       chat.messages[assistantIndex].status = 'streaming'
     }
   } else if (editId) {
@@ -317,6 +319,7 @@ export async function send({ content, regenerateId, editId } = {}) {
         if (event === 'chart' && current) current.chart = payload
         if (event === 'search' && current) {
           current.searchStatus = payload.status || ''
+          if (payload.query) current.searchQuery = payload.query
           if (Array.isArray(payload.sources)) current.sources = payload.sources
         }
         if (event === 'tool' && current) {
